@@ -1,0 +1,60 @@
+{
+  "project": "StockForge",
+  "mode": "research",
+  "dataProvider": "alphavantage",
+  "benchmark": "SPY",
+  "currency": "USD",
+  "timeframe": "daily",
+  "universe": [
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL",
+    "META", "AVGO", "TSLA", "AMD", "ORCL",
+    "CRM", "ADBE", "QCOM", "TXN", "AMAT",
+    "MU", "CSCO", "IBM", "INTU", "NOW",
+    "JPM", "V", "MA", "GS", "MS",
+    "BAC", "WFC", "LLY", "UNH", "JNJ",
+    "MRK", "ABBV", "PFE", "TMO", "WMT",
+    "COST", "HD", "MCD", "NKE", "DIS",
+    "KO", "PEP", "XOM", "CVX", "COP",
+    "CAT", "BA", "GE", "NFLX", "UBER"
+  ],
+  "api": {
+    "alphaVantageKeyEnvironmentVariable": "ALPHAVANTAGE_API_KEY",
+    "alphaVantageDelaySeconds": 12,
+    "cacheMinutes": 30,
+    "secUserAgentEnvironmentVariable": "SEC_USER_AGENT"
+  },
+  "portfolio": {
+    "accountValue": 10000,
+    "riskPerTradePercent": 0.5,
+    "maxPositionPercent": 10,
+    "maxOpenPositions": 8,
+    "maxPortfolioExposurePercent": 60,
+    "minimumAverageDollarVolume": 20000000,
+    "atrStopMultiple": 2.0
+  },
+  "selection": {
+    "minimumHistoryBars": 210,
+    "minimumScore": 65,
+    "maximumAnnualizedVolatility": 0.65,
+    "maximumDataAgeHours": 120,
+    "weights": {
+      "technical": 35,
+      "fundamental": 30,
+      "riskQuality": 20,
+      "sentiment": 10,
+      "marketRegime": 5
+    }
+  },
+  "broker": {
+    "name": "ibkr",
+    "environment": "paper",
+    "host": "127.0.0.1",
+    "twsPaperPort": 7497,
+    "gatewayPaperPort": 4002,
+    "clientIdDiagnostics": 41,
+    "clientIdMarketData": 42,
+    "readOnlyApiRequired": true,
+    "orderRoutingEnabled": false,
+    "maximumOrderNotional": 1000
+  }
+}

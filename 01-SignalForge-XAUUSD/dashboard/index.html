@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SignalForge FX read-only MT5 dashboard for XAU/USD validation.">
+  <title>SignalForge FX</title>
+  <link rel="stylesheet" href="styles.css?v=20260707-live-candle">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#">
+      <span class="brand-mark">SF</span>
+      <span>SignalForge <em>FX</em></span>
+    </a>
+    <div class="market-status">
+      <span class="pulse"></span>
+      <span id="dataMode">SIMULATED DATA</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero compact-hero">
+      <div>
+        <p class="eyebrow">XAU/USD VALIDATION DASHBOARD</p>
+        <h1>One clear view of <span>SignalForge.</span></h1>
+        <p class="lede">Read-only monitoring for the v1.40 MT5 system: decision, risk, alerts, and validation cleanliness.</p>
+      </div>
+      <div class="hero-actions">
+        <button id="connectLive" class="upload">Connect MT5 live file</button>
+        <label class="upload secondary-upload">
+          Import candle CSV
+          <input id="csvInput" type="file" accept=".csv,text/csv">
+        </label>
+        <button id="resetDemo" class="ghost">Reset demo</button>
+      </div>
+    </section>
+
+    <section class="notice">
+      <strong id="noticeTitle">Research mode.</strong>
+      <span id="noticeText">Prices are simulated until you connect MT5 or import data. This dashboard cannot place orders.</span>
+    </section>
+
+    <section id="liveStrip" class="live-strip hidden">
+      <div><span>Heartbeat</span><strong id="liveHeartbeat">—</strong></div>
+      <div><span>Account</span><strong id="liveAccount">—</strong></div>
+      <div><span>Balance</span><strong id="liveBalance">—</strong></div>
+      <div><span>Equity</span><strong id="liveEquity">—</strong></div>
+      <div><span>Live file</span><strong id="liveFileInfo">—</strong></div>
+      <div><span>Open position</span><strong id="livePosition">None</strong></div>
+      <div><span>Today</span><strong id="liveToday">—</strong></div>
+    </section>
+
+    <nav id="pairTabs" class="pair-tabs compact-tabs" aria-label="Currency pairs"></nav>
+
+    <section class="dashboard-grid command-grid">
+      <article id="strategyCenter" class="panel readiness-panel command-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="label">DECISION ENGINE</p>
+            <h2>Current trade decision</h2>
+          </div>
+          <span id="strategyStatus" class="status-pill">WAITING</span>
+        </div>
+        <div class="readiness-hero">
+          <div id="strategyAction" class="readiness-action wait">WAIT</div>
+          <div class="readiness-copy">
+            <strong id="strategyHeadline">Waiting for the EA strategy feed</strong>
+            <span id="strategyReason">The monitor is connected, but v1.40 has not published its exact checks yet.</span>
+          </div>
+          <div class="candle-clock">
+            <span>Next H1 close</span>
+            <strong id="strategyCountdown">--:--</strong>
+          </div>
+        </div>
+        <div class="readiness-scores">
+          <div><span>BUY base</span><strong id="strategyBuyBase">-- / 5</strong></div>
+          <div><span>SELL base</span><strong id="strategySellBase">-- / 5</strong></div>
+          <div><span>BUY filters</span><strong id="strategyBuyFilters">-- / 6</strong></div>
+          <div><span>SELL filters</span><strong id="strategySellFilters">-- / 6</strong></div>
+        </div>
+        <div class="readiness-columns compact-checks">
+          <section>
+            <div class="readiness-title"><span>Base checks</span><strong id="strategyBias">BIAS --</strong></div>
+            <div id="strategyBaseChecks" class="check-list"></div>
+          </section>
+          <section>
+            <div class="readiness-title"><span>Regime filters</span><strong>6 / 6 required</strong></div>
+            <div id="strategyFilterChecks" class="check-list"></div>
+          </section>
+          <section>
+            <div class="readiness-title"><span>Execution status</span><strong id="strategyVersion">v--</strong></div>
+            <div id="strategyOperations" class="operation-list"></div>
+          </section>
+        </div>
+        <p class="footnote">Only a confirmed BUY/SELL from the EA is actionable. 4/5 means preparation only.</p>
+      </article>
+
+      <article class="panel chart-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="label">MARKET</p>
+            <h2>Recent XAU/USD candles</h2>
+          </div>
+          <span id="lastUpdated" class="muted">—</span>
+        </div>
+        <canvas id="priceChart" role="img" aria-label="Price chart"></canvas>
+        <div class="legend">
+          <span><i class="legend-fast"></i> EMA 20</span>
+          <span><i class="legend-slow"></i> EMA 50</span>
+          <span><i class="legend-support"></i> Support zone</span>
+          <span><i class="legend-resistance"></i> Resistance zone</span>
+          <span><i class="legend-live"></i> Live bid/ask</span>
+          <span><i style="background:var(--red)"></i> Bearish candle</span>
+          <span>Latest candle is live/forming</span>
+        </div>
+        <div id="chartFeedMeta" class="chart-feed-meta">Waiting for MT5 candle feed.</div>
+      </article>
+    </section>
+
+    <section class="trade-summary-grid single-summary">
+      <article class="panel signal-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="label">TRADE LEVELS</p>
+            <h2 id="pairName">XAU / USD</h2>
+          </div>
+          <span id="timeframe" class="timeframe">H1</span>
+        </div>
+        <div class="signal-core compact-signal">
+          <div id="signalBadge" class="signal-badge neutral">WAIT</div>
+          <div>
+            <div id="lastPrice" class="price">—</div>
+            <div id="signalReason" class="muted">Waiting for enough closed candles</div>
+          </div>
+        </div>
+        <div class="levels">
+          <div><span id="entryLabel">Trade entry</span><strong id="entry">—</strong></div>
+          <div><span>Stop loss</span><strong id="stop">—</strong></div>
+          <div><span>Take profit</span><strong id="target">—</strong></div>
+          <div><span>Risk : reward</span><strong id="rr">—</strong></div>
+        </div>
+        <div class="confidence">
+          <div><span>Confluence score</span><strong id="confidenceValue">0 / 100</strong></div>
+          <div class="meter"><i id="confidenceBar"></i></div>
+          <small>Rule agreement only; not a profit probability.</small>
+        </div>
+      </article>
+    </section>
+
+    <section id="liveDetails" class="live-details hidden">
+      <section class="operations-grid">
+        <article class="panel daily-panel">
+          <div class="panel-heading">
+            <div><p class="label">TODAY</p><h2>Operating summary</h2></div>
+            <span id="dailyStatus" class="status-pill">WAITING</span>
+          </div>
+          <div id="dailyReport" class="report-grid"></div>
+        </article>
+
+        <article class="panel validation-panel">
+          <div class="panel-heading">
+            <div><p class="label">VALIDATION</p><h2>30-day test cleanliness</h2></div>
+            <span id="validationStatus" class="status-pill">WAITING</span>
+          </div>
+          <div id="validationWarning" class="validation-warning hidden"></div>
+          <div id="validationList" class="health-list"></div>
+        </article>
+
+        <article class="panel risk-panel">
+          <div class="panel-heading">
+            <div><p class="label">RISK</p><h2>Limit status</h2></div>
+            <span id="riskStatus" class="status-pill">—</span>
+          </div>
+          <div id="riskGrid" class="risk-grid"></div>
+        </article>
+      </section>
+
+      <section class="diagnostic-grid">
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="label">EXPOSURE</p><h2>Open positions</h2></div>
+            <span id="positionSummary" class="muted">—</span>
+          </div>
+          <div class="table-wrap compact-table">
+            <table>
+              <thead><tr><th>Owner</th><th>Symbol</th><th>Side</th><th>Volume</th><th>Entry</th><th>Stop</th><th>Profit</th><th>Risk</th></tr></thead>
+              <tbody id="positionsBody"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel blocked-panel">
+          <div class="panel-heading">
+            <div><p class="label">WHY NO TRADE?</p><h2>Blocked setup log</h2></div>
+            <span id="blockedSummary" class="muted">—</span>
+          </div>
+          <div class="table-wrap compact-table">
+            <table>
+              <thead><tr><th>Bar</th><th>Bias</th><th>Base</th><th>Filters</th><th>Missing rules</th></tr></thead>
+              <tbody id="blockedBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <details class="advanced-details">
+        <summary>Support & resistance</summary>
+        <div class="advanced-grid">
+          <article class="panel sr-panel">
+            <div class="panel-heading">
+              <div><p class="label">S/R MAP</p><h2>Support & resistance</h2></div>
+              <span id="srStatus" class="status-pill">—</span>
+            </div>
+            <div class="sr-core">
+              <div id="srZone" class="sr-zone neutral">RANGE</div>
+              <div>
+                <div id="srDistance" class="sr-distance">—</div>
+                <div id="srSummary" class="muted">Waiting for live candles.</div>
+              </div>
+            </div>
+            <div class="sr-levels">
+              <div><span>Resistance</span><strong id="srResistance">—</strong></div>
+              <div><span>Price</span><strong id="srPrice">—</strong></div>
+              <div><span>Support</span><strong id="srSupport">—</strong></div>
+            </div>
+            <div id="srClues" class="sr-clues"></div>
+          </article>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <span>SignalForge FX · Read-only dashboard</span>
+    <span>Not financial advice · No guaranteed returns</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

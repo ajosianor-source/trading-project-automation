@@ -1,0 +1,22 @@
+{
+  "generatedAt": "2026-07-04T07:58:14.429515+00:00",
+  "source": "IBKR paper executions (local append-only journal)",
+  "statistics": {
+    "executionCount": 0,
+    "closedTradeCount": 0,
+    "winningTrades": 0,
+    "losingTrades": 0,
+    "winRatePercent": null,
+    "realizedPnl": 0,
+    "averageTradePnl": null,
+    "profitFactor": null
+  },
+  "closedTrades": [],
+  "openPositions": [],
+  "unmatchedSells": [],
+  "accounts": [
+    "DUR172722",
+    "DUR172722"
+  ],
+  "journal": "data\\ibkr-executions.json"
+}

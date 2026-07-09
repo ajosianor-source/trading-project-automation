@@ -1,0 +1,30 @@
+[project]
+name = "stockforge-ml"
+version = "0.1.0"
+description = "Leakage-aware ML research and meta-labeling pipeline for StockForge"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "numpy>=2.2,<3",
+  "pandas>=2.2,<4",
+  "scikit-learn>=1.7,<2",
+  "skops>=0.12,<1"
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<10"
+]
+broker = [
+  "alpaca-py>=0.40,<1"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stockforge_ml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

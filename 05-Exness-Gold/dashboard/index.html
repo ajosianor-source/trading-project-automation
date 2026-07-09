@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Read-only live dashboard for Exness Gold Guard.">
+  <title>Exness Gold Guard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#">
+      <span class="brand-mark">EG</span>
+      <span>Exness <strong>Gold Guard</strong></span>
+    </a>
+    <div class="connection">
+      <span id="connectionDot" class="connection-dot demo"></span>
+      <span id="connectionLabel">DEMO PREVIEW</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow"><span id="heroInstrument">XAUUSD</span> · H1 SYSTEM</p>
+        <h1>Live risk, without<br><em>the noise.</em></h1>
+        <p class="lede">A read-only window into Exness Gold Guard. This page can monitor the EA, but it cannot place or modify trades.</p>
+      </div>
+      <div class="hero-actions">
+        <button id="connectButton" class="primary">Connect MT5 live file</button>
+        <button id="refreshButton" class="secondary">Refresh live feed</button>
+        <button id="manualButton" class="secondary">Select JSON file manually</button>
+        <button id="sampleButton" class="tertiary">Load sample feed</button>
+        <button id="demoButton" class="secondary">View demo</button>
+        <input id="fileFallback" type="file" accept=".json,application/json" hidden>
+      </div>
+      <p class="picker-help">If the browser file picker cannot jump to the MT5 folder, select the file manually from `%APPDATA%\MetaQuotes\Terminal\Common\Files\ExnessGoldGuard\live.json`. If the feed still looks stale, confirm the EA is writing a fresh heartbeat.</p>
+    </section>
+
+    <section id="notice" class="notice">
+      <div>
+        <span id="noticeIcon" class="notice-icon">i</span>
+        <p><strong id="noticeTitle">Preview mode</strong><span id="noticeText">Connect the EA’s live.json file to begin read-only monitoring.</span></p>
+      </div>
+      <span class="readonly">READ ONLY</span>
+    </section>
+
+    <section class="metric-strip">
+      <div><span>Account</span><strong id="accountMode">DEMO</strong><small id="accountServer">Preview feed</small></div>
+      <div><span>Balance</span><strong id="balance">$1,000,000.00</strong><small id="loginTail">Login ····0000</small></div>
+      <div><span>Equity</span><strong id="equity">$1,000,000.00</strong><small id="equityDelta" class="positive">$0.00 today</small></div>
+      <div><span>Free margin</span><strong id="freeMargin">$1,000,000.00</strong><small id="marginLevel">No margin used</small></div>
+      <div><span>Heartbeat</span><strong id="heartbeat">LIVE</strong><small id="lastUpdate">Just now</small></div>
+    </section>
+
+    <section class="grid">
+      <article class="panel command-panel">
+        <div class="panel-head">
+          <div><p class="label">DECISION ENGINE</p><h2>Trade readiness</h2></div>
+          <span id="engineMode" class="pill locked">SIGNALS ONLY</span>
+        </div>
+        <div class="signal-block">
+          <div id="signalBadge" class="signal-badge wait">WAIT</div>
+          <div>
+            <span class="symbol" id="symbol">XAUUSD</span>
+            <strong id="price">2,330.000</strong>
+            <p id="signalDetail">Waiting for the next completed H1 candle.</p>
+          </div>
+        </div>
+        <div class="quote-row">
+          <div><span>Bid</span><strong id="bid">—</strong></div>
+          <div><span>Ask</span><strong id="ask">—</strong></div>
+          <div><span>Spread</span><strong id="spread">—</strong></div>
+        </div>
+        <div class="engine-status">
+          <span>EA status</span>
+          <strong id="engineStatus">Ready; waiting for a closed H1 candle</strong>
+        </div>
+        <div class="readiness">
+          <div class="readiness-head"><span>Signal factors</span><strong id="nextH1">NEXT H1 --:--</strong></div>
+          <div id="factorList" class="factor-list"></div>
+        </div>
+      </article>
+
+      <article class="panel chart-panel">
+        <div class="panel-head">
+          <div><p class="label">MARKET STRUCTURE</p><h2><span id="chartInstrument">XAUUSD</span> candles</h2></div>
+          <span class="timeframe">H1</span>
+        </div>
+        <canvas id="chart" aria-label="Recent XAUUSD candlestick chart"></canvas>
+        <div class="chart-legend"><span><i class="up"></i>Bullish</span><span><i class="down"></i>Bearish</span><span>Latest candle may be forming</span></div>
+      </article>
+
+      <article class="panel risk-panel">
+        <div class="panel-head">
+          <div><p class="label">CAPITAL DEFENCE</p><h2>Risk limits</h2></div>
+          <span id="riskState" class="pill healthy">HEALTHY</span>
+        </div>
+        <div class="risk-hero">
+          <div><span>Risk per trade</span><strong id="riskCash">$200.00</strong><small id="riskPercent">0.02% of equity</small></div>
+          <div><span>Trades today</span><strong id="tradesToday">0 / 5</strong><small id="realizedToday">$0.00 realized</small></div>
+        </div>
+        <div class="limit">
+          <div><span>Daily equity loss</span><strong id="dailyLossText">0.000% / 0.150%</strong></div>
+          <div class="track"><i id="dailyLossBar"></i></div>
+        </div>
+        <div class="limit">
+          <div><span>Persistent drawdown</span><strong id="drawdownText">0.000% / 1.000%</strong></div>
+          <div class="track"><i id="drawdownBar"></i></div>
+        </div>
+      </article>
+
+      <article class="panel position-panel">
+        <div class="panel-head">
+          <div><p class="label">LIVE EXPOSURE</p><h2>Open position</h2></div>
+          <span id="positionState" class="pill neutral">FLAT</span>
+        </div>
+        <div id="flatPosition" class="flat-state">
+          <span class="flat-orbit"></span>
+          <strong>No Guard position</strong>
+          <p>The account has no EA-managed exposure for this feed.</p>
+        </div>
+        <div id="openPosition" class="position-details hidden">
+          <div class="position-title"><span id="positionSide">BUY</span><strong id="positionVolume">0.00 lots</strong></div>
+          <div class="position-grid">
+            <div><span>Entry</span><strong id="positionEntry">—</strong></div>
+            <div><span>Floating P/L</span><strong id="positionProfit">—</strong></div>
+            <div><span>Stop loss</span><strong id="positionStop">—</strong></div>
+            <div><span>Take profit</span><strong id="positionTarget">—</strong></div>
+          </div>
+          <div id="protectionState" class="protection">SL + TP VERIFIED</div>
+        </div>
+      </article>
+
+      <article class="panel health-panel">
+        <div class="panel-head">
+          <div><p class="label">SYSTEM HEALTH</p><h2>Live safeguards</h2></div>
+          <span id="healthState" class="pill healthy">HEALTHY</span>
+        </div>
+        <div id="healthList" class="health-list"></div>
+      </article>
+
+      <article class="panel shadow-panel">
+        <div class="panel-head">
+          <div><p class="label">FORWARD EVIDENCE</p><h2>Shadow trades</h2></div>
+          <span id="shadowState" class="pill neutral">FLAT</span>
+        </div>
+        <div class="shadow-summary">
+          <div><span>Trades</span><strong id="shadowTrades">0</strong></div>
+          <div><span>Win rate</span><strong id="shadowWinRate">--</strong></div>
+          <div><span>Profit factor</span><strong id="shadowProfitFactor">--</strong></div>
+          <div><span>Net result</span><strong id="shadowNetR">0.00R</strong><small id="shadowEstimated">$0.00 estimated</small></div>
+          <div><span>Max drawdown</span><strong id="shadowDrawdown">0.00R</strong></div>
+        </div>
+        <div id="shadowFlat" class="shadow-note">Signals-only paper tracking is ready. It uses virtual SL/TP and never sends an order.</div>
+        <div id="shadowOpen" class="shadow-open hidden">
+          <div><span>Side / size</span><strong id="shadowSide">--</strong></div>
+          <div><span>Current</span><strong id="shadowCurrentR">--</strong></div>
+          <div><span>Entry</span><strong id="shadowEntry">--</strong></div>
+          <div><span>Stop / target</span><strong id="shadowStops">--</strong></div>
+          <div><span>MFE / MAE</span><strong id="shadowExcursion">--</strong></div>
+        </div>
+        <p class="connect-note">Reference equity: <strong id="shadowReference">$1,000,000.00</strong>. Paper results exclude guaranteed fills and cannot prove future profitability.</p>
+      </article>
+
+      <article class="panel execution-panel">
+        <div class="panel-head">
+          <div><p class="label">ORDER QUALITY</p><h2>Execution analytics</h2></div>
+          <span id="executionState" class="pill neutral">NO FILLS</span>
+        </div>
+        <div class="execution-grid">
+          <div><span>Recorded fills</span><strong id="executionFills">0</strong></div>
+          <div><span>Last slippage</span><strong id="executionLast">--</strong></div>
+          <div><span>Average</span><strong id="executionAverage">--</strong></div>
+          <div><span>Maximum</span><strong id="executionMaximum">--</strong></div>
+        </div>
+        <p class="connect-note">Populates only after real EA-managed fills. Zero fills is expected while signals-only mode is active.</p>
+      </article>
+
+      <article class="panel alerts-panel">
+        <div class="panel-head">
+          <div><p class="label">ALERT DELIVERY</p><h2>Signal communications</h2></div>
+          <span id="alertState" class="pill neutral">NO ALERT YET</span>
+        </div>
+        <div class="alert-layout">
+          <div class="last-alert">
+            <span id="lastAlertLevel">NONE</span>
+            <strong id="lastAlertMessage">Waiting for trend, watch, trade or position events.</strong>
+            <small id="lastAlertTime">No alert dispatched</small>
+          </div>
+          <div class="delivery-grid">
+            <div><span>MT5 mobile push</span><strong id="pushStatus">NOT SENT</strong><small id="pushDetail">Configure MetaQuotes ID</small></div>
+            <div><span>WhatsApp relay</span><strong id="whatsappStatus">NOT SENT</strong><small id="whatsappDetail">Local relay endpoint</small></div>
+            <div><span>Activity journal</span><strong id="journalStatus">NOT WRITTEN</strong><small id="journalDetail">Persistent CSV audit trail</small></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel news-panel">
+        <div class="panel-head">
+          <div><p class="label">USD EVENT RISK</p><h2>News guard</h2></div>
+          <span id="newsState" class="pill neutral">WAITING</span>
+        </div>
+        <div class="news-body">
+          <strong id="newsEvent">Checking the MT5 economic calendar</strong>
+          <span id="newsCountdown">High-impact USD events</span>
+        </div>
+        <p class="connect-note">New entries are blocked 30 minutes before and 15 minutes after high-impact USD events. Existing positions are not automatically closed.</p>
+      </article>
+
+      <article class="panel connect-panel">
+        <div class="panel-head">
+          <div><p class="label">FIRST CONNECTION</p><h2>Connect the feed</h2></div>
+          <span class="step-number">3 STEPS</span>
+        </div>
+        <ol>
+          <li><span>1</span><p>Attach <strong>ExnessGoldGuard</strong> to the Exness XAUUSD or BTCUSD H1 chart and load its matching preset.</p></li>
+          <li><span>2</span><p>Confirm the Experts log reports the dashboard feed path.</p></li>
+          <li><span>3</span><p>Click <strong>Connect MT5 live file</strong> and select:<code>...\ExnessGoldGuard\live.json (gold)<br>...\ExnessGoldGuard\btc-live.json (bitcoin)</code></p></li>
+        </ol>
+        <p class="connect-note">The browser remembers the selected file handle when permission allows. Reconnect after browser permission is cleared.</p>
+      </article>
+    </section>
+  </main>
+  <footer>
+    <div>Exness Gold Guard dashboard · Read-only monitoring</div>
+    <div>Built for project 05</div>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

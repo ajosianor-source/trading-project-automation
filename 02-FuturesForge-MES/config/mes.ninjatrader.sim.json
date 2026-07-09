@@ -1,0 +1,33 @@
+{
+  "product": "MES",
+  "exchange": "CME",
+  "timezone": "America/Chicago",
+  "bars": {
+    "type": "minute",
+    "value": 5
+  },
+  "contractMultiplierUsd": 5.0,
+  "tickSize": 0.25,
+  "tickValueUsd": 1.25,
+  "executionMode": "simulation",
+  "strategy": {
+    "name": "FuturesForgeMES",
+    "quantity": 1,
+    "accountAllowList": [
+      "Sim101",
+      "Playback*"
+    ]
+  },
+  "risk": {
+    "stopTicks": 20,
+    "targetTicks": 40,
+    "dailyLossLimitUsd": 250.0,
+    "maxTradesPerDay": 3,
+    "maxConsecutiveLosses": 3
+  },
+  "connection": {
+    "platform": "NinjaTrader 8",
+    "marketDataProvider": "UNCONFIRMED",
+    "orderRoutingEnabled": false
+  }
+}

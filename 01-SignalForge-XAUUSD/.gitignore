@@ -1,0 +1,3 @@
+tools/whatsapp-relay/.env
+tools/whatsapp-relay/__pycache__/
+tools/whatsapp-relay/*.log

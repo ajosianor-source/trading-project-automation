@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>StockForge · Project 04</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="#">
+        <span class="brand-mark">SF</span>
+        <span><b>StockForge</b><small>PROJECT 04</small></span>
+      </a>
+      <div class="system-state">
+        <span id="us-market-status" class="pill market-closed">US MARKET CLOSED</span>
+        <span id="data-state" class="pill warning">Awaiting scan</span>
+        <span id="clock"></span>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div>
+        <p class="eyebrow">MULTI-FACTOR EQUITY INTELLIGENCE</p>
+        <h1>Find strength.<br><em>Control risk.</em></h1>
+        <p class="lede">A transparent ranking engine for technical, fundamental, liquidity, volatility, market-regime, and news-sentiment evidence.</p>
+      </div>
+      <aside class="leader-card">
+        <span class="card-label">TOP REVIEW CANDIDATE</span>
+        <div class="leader-symbol">
+          <strong id="leader-symbol">—</strong>
+          <span id="leader-score">—</span>
+        </div>
+        <p id="leader-name" class="leader-name">No instrument selected</p>
+        <p id="leader-summary">Run the scanner to calculate an evidence-weighted candidate.</p>
+        <div class="leader-price">
+          <span>Reference price</span>
+          <b id="leader-price">—</b>
+        </div>
+        <p class="guardrail">Candidate for review, not an instruction to buy.</p>
+      </aside>
+    </section>
+
+    <section class="metrics" aria-label="System summary">
+      <article><span>Market regime</span><strong id="market-regime">—</strong></article>
+      <article><span>Data provider</span><strong id="provider">—</strong></article>
+      <article><span>Universe</span><strong id="universe-size">—</strong></article>
+      <article><span>Order routing</span><strong id="routing" class="safe">DISABLED</strong></article>
+    </section>
+
+    <section class="workspace">
+      <div class="ranking-panel panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">CROSS-SECTIONAL RANKING</p>
+            <h2>Opportunity board</h2>
+          </div>
+          <span id="generated-at" class="muted">No scan loaded</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Symbol</th>
+                <th>Company</th>
+                <th>Score</th>
+                <th>Price</th>
+                <th>Trend</th>
+                <th>Fundamental</th>
+                <th>Risk quality</th>
+                <th>Screening</th>
+              </tr>
+            </thead>
+            <tbody id="ranking-body">
+              <tr><td colspan="9" class="empty">Run REFRESH-IBKR-DASHBOARD.cmd to populate the board.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <aside class="detail-panel panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">DECISION TRACE</p>
+            <h2 id="detail-symbol">Select a stock</h2>
+          </div>
+          <span id="detail-score" class="score-orb">—</span>
+        </div>
+        <div id="factor-list" class="factor-list"></div>
+        <div class="readiness-box">
+          <div class="readiness-heading">
+            <div>
+              <p class="eyebrow">PAPER-TRADE GATE</p>
+              <strong id="readiness-status">NOT READY</strong>
+            </div>
+            <span id="readiness-count">0 / 9</span>
+          </div>
+          <div id="readiness-list" class="readiness-list">
+            <p class="muted">Select a stock to evaluate the trade checklist.</p>
+          </div>
+          <p class="readiness-note">Earnings and news checks fail closed when provider evidence is missing, stale, rate-limited, or does not match this scan.</p>
+        </div>
+        <div class="risk-box">
+          <p class="eyebrow">EARNINGS &amp; NEWS EVIDENCE</p>
+          <dl>
+            <div><dt>Next earnings</dt><dd id="evidence-earnings">N/A</dd></div>
+            <div><dt>Earnings window</dt><dd id="evidence-window">N/A</dd></div>
+            <div><dt>Relevant articles</dt><dd id="evidence-articles">N/A</dd></div>
+            <div><dt>Adverse flags</dt><dd id="evidence-adverse">N/A</dd></div>
+            <div><dt>Evidence checked</dt><dd id="evidence-checked">N/A</dd></div>
+          </dl>
+          <ul id="evidence-headlines" class="evidence-headlines">
+            <li>No automated evidence loaded.</li>
+          </ul>
+        </div>
+        <div class="risk-box">
+          <p class="eyebrow">SEC FUNDAMENTALS</p>
+          <dl>
+            <div><dt>Revenue growth</dt><dd id="fund-revenue">—</dd></div>
+            <div><dt>Operating margin</dt><dd id="fund-operating">—</dd></div>
+            <div><dt>FCF margin</dt><dd id="fund-fcf">—</dd></div>
+            <div><dt>Liabilities/assets</dt><dd id="fund-leverage">—</dd></div>
+            <div><dt>Filing used</dt><dd id="fund-filed">—</dd></div>
+            <div><dt>Fiscal year</dt><dd id="fund-year">—</dd></div>
+          </dl>
+        </div>
+        <div class="risk-box">
+          <p class="eyebrow">ATR RISK PLAN</p>
+          <dl>
+            <div><dt>Direction</dt><dd id="risk-direction">LONG ONLY</dd></div>
+            <div><dt>Suggested shares</dt><dd id="risk-shares">—</dd></div>
+            <div><dt>Initial stop</dt><dd id="risk-stop">—</dd></div>
+            <div><dt>Provisional 2R target</dt><dd id="risk-target">—</dd></div>
+            <div><dt>Position value</dt><dd id="risk-position">—</dd></div>
+            <div><dt>Risk budget</dt><dd id="risk-budget">—</dd></div>
+          </dl>
+        </div>
+        <ul id="reason-list" class="reason-list">
+          <li>Scores and explanations appear after a scan.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="history-panel panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">IBKR PAPER JOURNAL</p>
+          <h2>Trading history</h2>
+        </div>
+        <span id="history-source" class="muted">No executions collected</span>
+      </div>
+      <div class="history-metrics">
+        <article><span>Closed trades</span><strong id="history-count">0</strong></article>
+        <article><span>Win rate</span><strong id="history-win-rate">N/A</strong></article>
+        <article><span>Realized P/L</span><strong id="history-pnl">$0.00</strong></article>
+        <article><span>Average trade</span><strong id="history-average">N/A</strong></article>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Exit time</th>
+              <th>Symbol</th>
+              <th>Quantity</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>Fees</th>
+              <th>Realized P/L</th>
+              <th>Return</th>
+            </tr>
+          </thead>
+          <tbody id="history-body">
+            <tr><td colspan="8" class="empty">No closed paper trades recorded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <p>StockForge is decision-support software. Scores can be wrong, data can be delayed, and losses can exceed modelled risk.</p>
+      <p id="data-asof">No market data loaded.</p>
+    </footer>
+  </main>
+  <script src="scan-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

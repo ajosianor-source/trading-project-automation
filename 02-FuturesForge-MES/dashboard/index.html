@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Read-only MES futures research and risk dashboard.">
+  <title>FuturesForge · MES Research Console</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="FuturesForge home">
+      <span class="brand-mark">FF</span>
+      <span>FuturesForge <em>MES</em></span>
+    </a>
+    <div class="top-status">
+      <span class="status-dot" aria-hidden="true"></span>
+      <strong>RESEARCH MODE</strong>
+      <span class="divider"></span>
+      <span>ROUTING OFF</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">bwsr aouecemJW IT BE feed fom orexfctoey makr the deciaion betteeTTER AND 
+      <div>
+        <p class="eyebrow">CME MICRO E-Mfwwddeomdoewxfactoey oINI S&amp;P 500</p>
+        <h1>Know the session.<br><span>Define the risk.</span></h1>
+        <p class="lede">A read-only workspace for testing MES ideas before a platform, feed, or paper account is connected.</p>
+        <div class="hero-actions">
+          <label class="import-button">
+            Import MES candle CSV
+            <input id="csvInput" type="file" accept=".csv,text/csv">
+          </label>
+          <button id="resetData" class="text-button" type="button">Reset simulation</button>
+        </div>
+      </div>
+      <div class="contract-card">
+        <div class="contract-symbol">MES</div>
+        <div><span>Minimum tick</span><strong>0.25 pts</strong></div>
+        <div><span>Tick value</span><strong>$1.25</strong></div>
+        <div><span>Multiplier</span><strong>$5 × index</strong></div>
+      </div>
+    </section>
+
+    <section class="safety-banner">
+      <div>
+        <span class="lock" aria-hidden="true">◇</span>
+        <p><strong>Execution is physically disconnected.</strong> The figures below are simulated research data and cannot place, modify, or cancel orders.</p>
+      </div>
+      <span class="paper-pill">PAPER · READ ONLY</span>
+    </section>
+
+    <section class="session-strip" aria-label="Session status">
+      <div><span>Exchange time</span><strong id="exchangeTime">--:--:-- CT</strong></div>
+      <div><span>Session</span><strong id="sessionName">--</strong></div>
+      <div><span>Next event</span><strong id="nextEvent">--</strong></div>
+      <div><span>Research contract</span><strong>MES · UNMAPPED</strong></div>
+      <div><span>Feed</span><strong id="dataMode" class="warn-text">SIMULATED</strong></div>
+    </section>
+
+    <section class="workspace-grid">
+      <article class="panel market-panel">
+        <div class="panel-head">
+          <div><p class="label">MARKET CONTEXT</p><h2>Session map</h2></div>
+          <span id="marketRegime" class="tag neutral">RANGE / UNCONFIRMED</span>
+        </div>
+        <div class="quote-row">
+          <div>
+            <span>Simulated MES</span>
+            <strong id="lastPrice">5,625.00</strong>
+            <small id="priceChange">+3.25 · +0.06%</small>
+          </div>
+          <div class="quote-stat"><span>Session VWAP</span><strong id="vwap">5,621.75</strong></div>
+          <div class="quote-stat"><span>Opening range</span><strong id="openingRange">8.50 pts</strong></div>
+        </div>
+        <canvas id="marketChart" width="900" height="310" aria-label="Simulated MES session chart"></canvas>
+        <div class="chart-legend">
+          <span><i class="price-key"></i>MES path</span>
+          <span><i class="vwap-key"></i>Session VWAP</span>
+          <span><i class="range-key"></i>Opening range</span>
+        </div>
+        <div class="context-grid">
+          <div><span>VWAP location</span><strong id="vwapLocation">Above · 3.25 pts</strong></div>
+          <div><span>OR position</span><strong id="orPosition">Inside range</strong></div>
+          <div><span>Realized range</span><strong>14.25 pts</strong></div>
+          <div><span>Volatility state</span><strong>Normal</strong></div>
+        </div>
+      </article>
+
+      <article class="panel readiness-panel">
+        <div class="panel-head">
+          <div><p class="label">DEPLOYMENT GATES</p><h2>System readiness</h2></div>
+          <span class="tag blocked">BLOCKED</span>
+        </div>
+        <div class="readiness-score">
+          <div class="score-ring"><strong id="readyCount">3</strong><span>/ 7</span></div>
+          <div><strong>Simulation strategy installed</strong><p>Four required gates remain before live execution can be considered.</p></div>
+        </div>
+        <div id="gateList" class="gate-list"></div>
+        <p class="panel-note">Routing remains disabled even after every gate is documented.</p>
+      </article>
+
+      <article class="panel risk-panel">
+        <div class="panel-head">
+          <div><p class="label">TICK-AWARE SIZING</p><h2>Risk calculator</h2></div>
+          <span class="tag paper">PLANNING TOOL</span>
+        </div>
+        <div class="calculator">
+          <label>Account equity
+            <span class="input-wrap"><b>$</b><input id="equityInput" type="number" min="100" step="100" value="25000"></span>
+          </label>
+          <label>Risk per trade
+            <span class="input-wrap suffix"><input id="riskInput" type="number" min="0.01" max="2" step="0.05" value="0.25"><b>%</b></span>
+          </label>
+          <label>Stop distance
+            <span class="input-wrap suffix"><input id="stopInput" type="number" min="0.25" step="0.25" value="5"><b>pts</b></span>
+          </label>
+        </div>
+        <div class="risk-results">
+          <div><span>Risk budget</span><strong id="riskBudget">$62.50</strong></div>
+          <div><span>Risk / contract</span><strong id="contractRisk">$25.00</strong></div>
+          <div class="contracts-result"><span>Maximum size</span><strong id="contractCount">2 <small>MES</small></strong></div>
+          <div><span>Unused budget</span><strong id="unusedBudget">$12.50</strong></div>
+        </div>
+        <div id="riskWarning" class="risk-warning hidden"></div>
+        <p class="panel-note">Sizing excludes commission, fees, slippage, gaps, and stop-fill uncertainty.</p>
+      </article>
+
+      <article class="panel limits-panel">
+        <div class="panel-head">
+          <div><p class="label">SESSION GUARDRAILS</p><h2>Daily risk limits</h2></div>
+          <span class="tag safe">CLEAR</span>
+        </div>
+        <div class="limit-list">
+          <div>
+            <div><span>Daily loss</span><strong>$0 / $250</strong></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div>
+            <div><span>Trades taken</span><strong>0 / 3</strong></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div>
+            <div><span>Consecutive losses</span><strong>0 / 3</strong></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+        </div>
+        <div class="halt-box">
+          <span>Emergency state</span>
+          <strong>NO HALT</strong>
+          <small>Research state only · no live account attached</small>
+        </div>
+      </article>
+
+      <article class="panel hypotheses-panel">
+        <div class="panel-head">
+          <div><p class="label">RESEARCH QUEUE</p><h2>Frozen hypotheses</h2></div>
+          <span class="tag neutral">0 VALIDATED</span>
+        </div>
+        <div class="hypothesis-list">
+          <div><b>01</b><p><strong>Opening-range continuation</strong><span>Confirm with session VWAP and volatility.</span></p><em>UNTESTED</em></div>
+          <div><b>02</b><p><strong>VWAP mean reversion</strong><span>Evaluate only in separately identified ranges.</span></p><em>UNTESTED</em></div>
+          <div><b>03</b><p><strong>Trend continuation</strong><span>Keep isolated from mean-reversion logic.</span></p><em>UNTESTED</em></div>
+        </div>
+      </article>
+
+      <article class="panel connection-panel">
+        <div class="panel-head">
+          <div><p class="label">INFRASTRUCTURE</p><h2>Connection map</h2></div>
+          <span class="tag paper">SIMULATION ONLY</span>
+        </div>
+        <div class="connection-flow">
+          <div><span>01</span><strong>NinjaTrader 8</strong><small>Detected</small></div>
+          <i>→</i>
+          <div><span>02</span><strong>CME feed</strong><small>Unselected</small></div>
+          <i>→</i>
+          <div><span>03</span><strong>Sim101</strong><small>Strategy installed</small></div>
+        </div>
+        <div class="connection-note">
+          <strong>Next decision</strong>
+          <p>Compile FuturesForgeMES in NinjaTrader, then confirm a genuine CME data connection. An index CFD feed is not equivalent validation data.</p>
+        </div>
+      </article>
+
+      <article class="panel quality-panel">
+        <div class="panel-head">
+          <div><p class="label">DATA INTEGRITY</p><h2>Import quality</h2></div>
+          <span id="qualityStatus" class="tag neutral">SIMULATION</span>
+        </div>
+        <div id="importDrop" class="import-drop">
+          <strong>Bring your own MES candles</strong>
+          <p>CSV columns: <code>timestamp,open,high,low,close,volume</code></p>
+          <small>Timestamps must include a UTC offset or <code>Z</code>. Prices are checked against the 0.25 MES tick.</small>
+        </div>
+        <div id="qualityGrid" class="quality-grid">
+          <div><span>Valid rows</span><strong id="validRows">20</strong></div>
+          <div><span>Rejected rows</span><strong id="rejectedRows">0</strong></div>
+          <div><span>Duplicates</span><strong id="duplicateRows">0</strong></div>
+          <div><span>Time gaps</span><strong id="gapCount">0</strong></div>
+          <div><span>Tick errors</span><strong id="tickErrors">0</strong></div>
+          <div><span>Bar interval</span><strong id="barInterval">SIM</strong></div>
+        </div>
+        <div id="importMessage" class="import-message">Illustrative data is active. Importing a file never uploads it or sends it anywhere.</div>
+      </article>
+    </section>
+  </main>
+
+  <footer>
+    <span>FuturesForge MES · Research console</span>
+    <span>Simulated data · Not financial advice · No order routing</span>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

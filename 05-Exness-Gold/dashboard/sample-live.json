@@ -1,0 +1,15 @@
+{
+  "schema": 2,
+  "heartbeat": 1783533763,
+  "terminal": {"connected": true, "algoTrading": true},
+  "account": {"mode": "REAL", "server": "Exness-MT5Real9", "loginTail": "1784", "currency": "USD", "balance": 300.00, "equity": 300.00, "freeMargin": 300.00, "marginLevel": 0.00},
+  "engine": {"version": "1.32", "mode": "TRADING ARMED", "status": "READY | WAIT", "emergencyStop": false, "exnessVerified": true},
+  "market": {"symbol": "XAUUSDm", "bid": 4072.496, "ask": 4072.736, "spreadPoints": 240.0, "signal": "WAIT", "detail": "RSI 51.8 | ADX 19.6 | ATR 8.42", "nextBarTime": 1783537200, "factors": {"h1": {"buy": false, "sell": true}, "h4": {"buy": false, "sell": true}, "breakout": {"buy": false, "sell": false}, "momentum": {"buy": false, "sell": true}, "strength": {"buy": false, "sell": false}}},
+  "risk": {"riskPercent": 0.02, "riskCash": 6.00, "dayStartEquity": 300.00, "dailyLossPercent": 0.000, "dailyLossLimit": 0.150, "drawdownPercent": 0.000, "drawdownLimit": 1.000, "tradesToday": 0, "tradesLimit": 5, "realizedToday": 0.00},
+  "position": {"open": false},
+  "shadow": {"enabled": true, "referenceEquity": 300.00, "open": false, "side": "FLAT", "entry": 0.000, "stop": 0.000, "target": 0.000, "volume": 0.00, "currentR": 0.000, "mfeR": 0.000, "maeR": 0.000, "stats": {"trades": 0, "wins": 0, "losses": 0, "winRate": 0.00, "netR": 0.00, "estimatedNet": 0.00, "profitFactor": 0.00, "maxDrawdownR": 0.00}},
+  "execution": {"fills": 0, "lastSlippagePoints": 0.0, "averageSlippagePoints": 0.0, "maxSlippagePoints": 0.0},
+  "alerts": {"lastLevel": "NONE", "lastMessage": "Waiting for trend, watch, trade or position events.", "lastTime": 0, "push": {"enabled": true, "configured": false, "status": "NOT SENT", "error": 0}, "whatsApp": {"enabled": true, "status": "NOT SENT", "error": 0}, "journal": {"enabled": true, "status": "NOT WRITTEN", "file": "activity-xauusd.csv", "lastEvent": "", "lastTime": 0}},
+  "news": {"enabled": true, "blocked": false, "status": "CLEAR", "event": "", "eventTime": 0, "minutesTo": 0, "alertMinutes": 30, "postMinutes": 15, "error": 0},
+  "candles": []
+}

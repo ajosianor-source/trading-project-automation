@@ -1,0 +1,12 @@
+{
+  "generatedAt": "2026-07-04T07:58:14.423757+00:00",
+  "source": "IBKR paper executions",
+  "accounts": [
+    "DUR172722",
+    "DUR172722"
+  ],
+  "appendOnly": true,
+  "executions": [],
+  "errors": [],
+  "orders_enabled_by_stockforge": false
+}

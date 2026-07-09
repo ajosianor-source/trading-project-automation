@@ -1,0 +1,20 @@
+{
+  "product": "MES",
+  "exchange": "CME",
+  "timezone": "America/Chicago",
+  "contractMultiplierUsd": 5.0,
+  "tickSize": 0.25,
+  "tickValueUsd": 1.25,
+  "executionMode": "paper",
+  "risk": {
+    "riskPerTradePercent": 0.25,
+    "dailyLossLimitPercent": 1.0,
+    "maxTradesPerDay": 3,
+    "maxConsecutiveLosses": 3
+  },
+  "connection": {
+    "platform": "UNSELECTED",
+    "marketDataProvider": "UNSELECTED",
+    "orderRoutingEnabled": false
+  }
+}

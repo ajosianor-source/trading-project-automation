@@ -1,0 +1,10 @@
+.env
+config/stocks.local.json
+data/cache/
+data/latest-scan.json
+reports/*.json
+reports/*.csv
+ml/.venv/
+ml/.pytest_cache/
+ml/**/__pycache__/
+ml/artifacts/

@@ -1,0 +1,27 @@
+{
+  "connected": true,
+  "server_time": "2026-07-03T12:15:58+00:00",
+  "next_valid_order_id_seen": true,
+  "managed_accounts": [
+    "DUR172722"
+  ],
+  "account_summary": {
+    "DUR172722": {
+      "AccountType": "INDIVIDUAL",
+      "BuyingPower": "4000000.00 GBP",
+      "NetLiquidation": "1000000.00 GBP",
+      "TotalCashValue": "1000000.00 GBP"
+    }
+  },
+  "messages": [
+    "INFO 2104 req=-1: Market data farm connection is OK:usfarm.nj",
+    "INFO 2104 req=-1: Market data farm connection is OK:usfuture",
+    "INFO 2104 req=-1: Market data farm connection is OK:cashfarm",
+    "INFO 2104 req=-1: Market data farm connection is OK:eufarmnj",
+    "INFO 2104 req=-1: Market data farm connection is OK:usfarm",
+    "INFO 2106 req=-1: HMDS data farm connection is OK:ushmds",
+    "INFO 2158 req=-1: Sec-def data farm connection is OK:secdefil"
+  ],
+  "environment": "paper",
+  "orders_enabled_by_stockforge": false
+}
