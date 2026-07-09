@@ -1,14 +1,16 @@
 #property copyright "Exness Gold Guard"
-#property version   "1.32"
+#property link      "https://www.exness.com"
+#property version   "1.40"
 #property strict
-#property description "Guarded Exness XAUUSD/BTCUSD H1 trend-breakout EA."
+#property description "Guarded Exness XAUUSD/BTCUSD M30/H1/H4 trend-breakout EA."
 
 #include <Trade/Trade.mqh>
 
 input group "Signal model"
 input string          InpAllowedSymbolRoot = "XAUUSD";
-input ENUM_TIMEFRAMES InpSignalTimeframe = PERIOD_H1;
+input ENUM_TIMEFRAMES InpSignalTimeframe = PERIOD_M30;
 input ENUM_TIMEFRAMES InpTrendTimeframe  = PERIOD_H4;
+input ENUM_TIMEFRAMES InpTrendTimeframe1 = PERIOD_H1;
 input int             InpFastEMA         = 20;
 input int             InpSlowEMA         = 50;
 input int             InpTrendFastEMA    = 50;
@@ -17,11 +19,24 @@ input int             InpRSIPeriod       = 14;
 input int             InpADXPeriod       = 14;
 input int             InpATRPeriod       = 14;
 input int             InpBreakoutBars    = 20;
-input double          InpMinimumADX      = 22.0;
-input double          InpBuyRSI          = 55.0;
-input double          InpSellRSI         = 45.0;
-input double          InpStopATR         = 1.5;
-input double          InpTargetATR       = 3.0;
+input double          InpMinimumADX      = 25.0;
+input double          InpMinimumATRPercent = 0.05;
+input double          InpBuyRSI          = 58.0;
+input double          InpSellRSI         = 42.0;
+input double          InpStopATR         = 1.4;
+input double          InpTargetATR       = 2.8;
+
+input group "Signal accuracy filters"
+input double          InpATRPercentile       = 60.0;
+input int             InpBlockStartHour      = 20;
+input int             InpBlockEndHour        = 8;
+input double          InpEMASlopeMinPercent  = 0.2;
+input double          InpPrevCandleWickMax   = 1.5;
+input int             InpStochK              = 14;
+input int             InpStochD              = 3;
+input int             InpStochSlowing        = 3;
+input int             InpM5BreakoutBars      = 5;
+input double          InpTickVolMinRatio     = 0.70;
 
 input group "Risk controls"
 input double          InpRiskPercent          = 0.02;
@@ -32,7 +47,7 @@ input double          InpMaxVolumeLots        = 5.00;
 input double          InpMaxMarginUsePct      = 5.00;
 input double          InpMinimumFreeMarginPct = 80.0;
 input int             InpMaxSpreadPoints      = 500;
-input double          InpMaxSpreadATRPercent  = 12.0;
+input double          InpMaxSpreadATRPercent  = 10.0;
 input int             InpDeviationPoints      = 30;
 input int             InpMaxTickAgeSeconds    = 10;
 input bool            InpAvoidRolloverHour    = true;
@@ -92,13 +107,16 @@ int      trend_slow_handle = INVALID_HANDLE;
 int      rsi_handle = INVALID_HANDLE;
 int      adx_handle = INVALID_HANDLE;
 int      atr_handle = INVALID_HANDLE;
+int      m5_fast_handle = INVALID_HANDLE;
+int      m5_slow_handle = INVALID_HANDLE;
+int      stochastic_handle = INVALID_HANDLE;
 datetime last_bar_time = 0;
 double   equity_peak = 0.0;
 double   day_start_equity = 0.0;
 int      state_day = 0;
 string   status_text = "Starting";
 string   signal_side = "WAIT";
-string   signal_detail = "Waiting for first closed H1 candle";
+string   signal_detail = "Waiting for first closed 30M candle";
 int      signal_buy_checks = 0;
 int      signal_sell_checks = 0;
 string   trend_bias = "WAIT";
@@ -133,6 +151,20 @@ bool     factor_buy_momentum = false;
 bool     factor_sell_momentum = false;
 bool     factor_buy_strength = false;
 bool     factor_sell_strength = false;
+bool     factor_buy_volatility = false;
+bool     factor_sell_volatility = false;
+bool     factor_buy_timeofday = false;
+bool     factor_sell_timeofday = false;
+bool     factor_buy_ema_slope = false;
+bool     factor_sell_ema_slope = false;
+bool     factor_buy_prev_strength = false;
+bool     factor_sell_prev_strength = false;
+bool     factor_buy_m5_confirm = false;
+bool     factor_sell_m5_confirm = false;
+bool     factor_buy_stochastic = false;
+bool     factor_sell_stochastic = false;
+bool     factor_buy_tickvol = false;
+bool     factor_sell_tickvol = false;
 bool     shadow_open = false;
 int      shadow_direction = 0;
 datetime shadow_open_time = 0;
@@ -1111,7 +1143,7 @@ void ExportDashboard()
          ",\"equity\":" + JNumber(equity, 2) +
          ",\"freeMargin\":" + JNumber(AccountInfoDouble(ACCOUNT_MARGIN_FREE), 2) +
          ",\"marginLevel\":" + JNumber(AccountInfoDouble(ACCOUNT_MARGIN_LEVEL), 2) + "}" +
-      ",\"engine\":{\"version\":\"1.32\",\"mode\":" + JString(DashboardMode()) +
+      ",\"engine\":{\"version\":\"1.40\",\"mode\":" + JString(DashboardMode()) +
          ",\"status\":" + JString(status_text) +
          ",\"emergencyStop\":" + JBool(InpEmergencyStop) +
          ",\"exnessVerified\":" +
@@ -1137,7 +1169,28 @@ void ExportDashboard()
                ",\"sell\":" + JBool(factor_sell_momentum) + "}" +
             ",\"strength\":{\"buy\":" +
                JBool(factor_buy_strength) +
-               ",\"sell\":" + JBool(factor_sell_strength) + "}}" +
+               ",\"sell\":" + JBool(factor_sell_strength) + "}" +
+            ",\"volatility\":{\"buy\":" +
+               JBool(factor_buy_volatility) +
+               ",\"sell\":" + JBool(factor_sell_volatility) + "}" +
+            ",\"timeofday\":{\"buy\":" +
+               JBool(factor_buy_timeofday) +
+               ",\"sell\":" + JBool(factor_sell_timeofday) + "}" +
+            ",\"emaslope\":{\"buy\":" +
+               JBool(factor_buy_ema_slope) +
+               ",\"sell\":" + JBool(factor_sell_ema_slope) + "}" +
+            ",\"prevstrength\":{\"buy\":" +
+               JBool(factor_buy_prev_strength) +
+               ",\"sell\":" + JBool(factor_sell_prev_strength) + "}" +
+            ",\"m5confirm\":{\"buy\":" +
+               JBool(factor_buy_m5_confirm) +
+               ",\"sell\":" + JBool(factor_sell_m5_confirm) + "}" +
+            ",\"stochastic\":{\"buy\":" +
+               JBool(factor_buy_stochastic) +
+               ",\"sell\":" + JBool(factor_sell_stochastic) + "}" +
+            ",\"tickvol\":{\"buy\":" +
+               JBool(factor_buy_tickvol) +
+               ",\"sell\":" + JBool(factor_sell_tickvol) + "}}" +
          ",\"detail\":" + JString(signal_detail) + "}" +
       ",\"risk\":{\"riskPercent\":" + JNumber(InpRiskPercent, 3) +
          ",\"riskCash\":" + JNumber(equity * InpRiskPercent / 100.0, 2) +
@@ -1303,22 +1356,147 @@ bool ExecutionAllowed(string &reason)
    return true;
 }
 
-bool BreakoutLevels(double &highest, double &lowest)
+bool VolatilityPercentile(const double current_atr, double &atr_percentile_value)
+{
+   double atr_values[];
+   if(CopyBuffer(atr_handle, 0, 1, 50, atr_values) != 50)
+      return false;
+   
+   int count_above = 0;
+   for(int i = 0; i < 50; i++)
+   {
+      if(atr_values[i] <= current_atr)
+         count_above++;
+   }
+   
+   atr_percentile_value = (double)count_above / 50.0 * 100.0;
+   return atr_percentile_value >= InpATRPercentile;
+}
+
+bool TimeOfDayOK()
+{
+   MqlDateTime now;
+   TimeToStruct(TimeTradeServer(), now);
+   
+   if(InpBlockStartHour < InpBlockEndHour)
+   {
+      return now.hour >= InpBlockEndHour && now.hour < InpBlockStartHour;
+   }
+   else
+   {
+      return now.hour >= InpBlockEndHour && now.hour < InpBlockStartHour;
+   }
+}
+
+bool EMASlope(const int direction, const double fast, const double slow, const double close_price)
+{
+   if(close_price <= 0.0)
+      return false;
+   
+   const double slope_percent = MathAbs(fast - slow) / close_price * 100.0;
+   
+   if(direction > 0)
+      return fast > slow && slope_percent >= InpEMASlopeMinPercent;
+   else
+      return fast < slow && slope_percent >= InpEMASlopeMinPercent;
+}
+
+bool PreviousCandleStrength()
+{
+   const double prev_high = iHigh(active_symbol, InpSignalTimeframe, 2);
+   const double prev_low = iLow(active_symbol, InpSignalTimeframe, 2);
+   const double prev_open = iOpen(active_symbol, InpSignalTimeframe, 2);
+   const double prev_close = iClose(active_symbol, InpSignalTimeframe, 2);
+   
+   if(prev_high <= prev_low)
+      return false;
+   
+   const double body = MathAbs(prev_close - prev_open);
+   const double range = prev_high - prev_low;
+   
+   if(range <= 0.0)
+      return false;
+   
+   const double body_to_range = body / range;
+   return body_to_range > (1.0 / InpPrevCandleWickMax);
+}
+
+bool M5BreakoutConfirmation(const int direction, double &m5_highest, double &m5_lowest)
+{
+   double m5_highs[];
+   double m5_lows[];
+   ArrayResize(m5_highs, InpM5BreakoutBars);
+   ArrayResize(m5_lows, InpM5BreakoutBars);
+   
+   if(CopyHigh(active_symbol, PERIOD_M5, 1, InpM5BreakoutBars, m5_highs) != InpM5BreakoutBars ||
+      CopyLow(active_symbol, PERIOD_M5, 1, InpM5BreakoutBars, m5_lows) != InpM5BreakoutBars)
+      return false;
+   
+   m5_highest = m5_highs[ArrayMaximum(m5_highs)];
+   m5_lowest = m5_lows[ArrayMinimum(m5_lows)];
+   
+   const double m5_close = iClose(active_symbol, PERIOD_M5, 0);
+   
+   if(direction > 0)
+      return m5_close > m5_highest;
+   else
+      return m5_close < m5_lowest;
+}
+
+bool StochasticSignal(const int direction, double &stoch_k)
+{
+   if(!ReadValue(stochastic_handle, 0, 1, stoch_k))
+      return false;
+   
+   if(direction > 0)
+      return stoch_k > 80.0;
+   else
+      return stoch_k < 20.0;
+}
+
+bool TickVolumeConfirmation()
+{
+   long current_volume = iVolume(active_symbol, InpSignalTimeframe, 1);
+   if(current_volume <= 0)
+      return false;
+   
+   double avg_volume = 0.0;
+   long volumes[];
+   if(CopyTickVolume(active_symbol, InpSignalTimeframe, 1, 20, volumes) != 20)
+      return false;
+   
+   for(int i = 0; i < 20; i++)
+      avg_volume += (double)volumes[i];
+   avg_volume /= 20.0;
+   
+   return current_volume >= avg_volume * InpTickVolMinRatio;
+}
+
+bool BreakoutLevels(double &highest, double &lowest,
+                    double &previous_highest, double &previous_lowest)
 {
    if(InpBreakoutBars < 2)
       return false;
 
    double highs[];
    double lows[];
+   double prev_highs[];
+   double prev_lows[];
    ArrayResize(highs, InpBreakoutBars);
    ArrayResize(lows, InpBreakoutBars);
+   ArrayResize(prev_highs, InpBreakoutBars);
+   ArrayResize(prev_lows, InpBreakoutBars);
    // Prior bars only: the signal candle at shift 1 must break these levels.
    if(CopyHigh(active_symbol, InpSignalTimeframe, 2, InpBreakoutBars, highs) != InpBreakoutBars ||
-      CopyLow(active_symbol, InpSignalTimeframe, 2, InpBreakoutBars, lows) != InpBreakoutBars)
+      CopyLow(active_symbol, InpSignalTimeframe, 2, InpBreakoutBars, lows) != InpBreakoutBars ||
+      CopyHigh(active_symbol, InpSignalTimeframe, 3, InpBreakoutBars, prev_highs) != InpBreakoutBars ||
+      CopyLow(active_symbol, InpSignalTimeframe, 3, InpBreakoutBars, prev_lows) != InpBreakoutBars)
       return false;
 
    highest = highs[ArrayMaximum(highs)];
    lowest = lows[ArrayMinimum(lows)];
+   previous_highest = prev_highs[ArrayMaximum(prev_highs)];
+   previous_lowest = prev_lows[ArrayMinimum(prev_lows)];
    return true;
 }
 
@@ -1338,8 +1516,24 @@ int Signal(double &atr, string &detail, int &buy_checks, int &sell_checks,
    factor_sell_momentum = false;
    factor_buy_strength = false;
    factor_sell_strength = false;
+   factor_buy_volatility = false;
+   factor_sell_volatility = false;
+   factor_buy_timeofday = false;
+   factor_sell_timeofday = false;
+   factor_buy_ema_slope = false;
+   factor_sell_ema_slope = false;
+   factor_buy_prev_strength = false;
+   factor_sell_prev_strength = false;
+   factor_buy_m5_confirm = false;
+   factor_sell_m5_confirm = false;
+   factor_buy_stochastic = false;
+   factor_sell_stochastic = false;
+   factor_buy_tickvol = false;
+   factor_sell_tickvol = false;
+   
    double fast, slow, fast_previous, trend_fast, trend_slow;
    double rsi, adx, plus_di, minus_di;
+   double m5_fast, m5_slow;
    if(!ReadValue(fast_handle, 0, 1, fast) ||
       !ReadValue(slow_handle, 0, 1, slow) ||
       !ReadValue(fast_handle, 0, 2, fast_previous) ||
@@ -1349,30 +1543,62 @@ int Signal(double &atr, string &detail, int &buy_checks, int &sell_checks,
       !ReadValue(adx_handle, 0, 1, adx) ||
       !ReadValue(adx_handle, 1, 1, plus_di) ||
       !ReadValue(adx_handle, 2, 1, minus_di) ||
-      !ReadValue(atr_handle, 0, 1, atr))
+      !ReadValue(atr_handle, 0, 1, atr) ||
+      !ReadValue(m5_fast_handle, 0, 1, m5_fast) ||
+      !ReadValue(m5_slow_handle, 0, 1, m5_slow))
    {
       detail = "Waiting for indicator history";
       return 0;
    }
 
    const double close_price = iClose(active_symbol, InpSignalTimeframe, 1);
-   double highest, lowest;
-   if(close_price <= 0.0 || atr <= 0.0 || !BreakoutLevels(highest, lowest))
+   double highest, lowest, previous_highest, previous_lowest;
+   if(close_price <= 0.0 || atr <= 0.0 || !BreakoutLevels(highest, lowest,
+                                                     previous_highest,
+                                                     previous_lowest))
    {
       detail = "Waiting for candle history";
       return 0;
    }
 
+   const double previous_close = iClose(active_symbol, InpSignalTimeframe, 2);
+   const bool atr_ok = atr >= close_price * InpMinimumATRPercent / 100.0;
    const bool buy_h1 = fast > slow && fast > fast_previous;
    const bool sell_h1 = fast < slow && fast < fast_previous;
    const bool buy_h4 = trend_fast > trend_slow;
    const bool sell_h4 = trend_fast < trend_slow;
-   const bool buy_breakout = close_price > highest;
-   const bool sell_breakout = close_price < lowest;
+   const bool buy_breakout = close_price > highest && previous_close > previous_highest;
+   const bool sell_breakout = close_price < lowest && previous_close < previous_lowest;
    const bool buy_momentum = rsi >= InpBuyRSI && rsi < 75.0;
    const bool sell_momentum = rsi <= InpSellRSI && rsi > 25.0;
-   const bool buy_strength = adx >= InpMinimumADX && plus_di > minus_di;
-   const bool sell_strength = adx >= InpMinimumADX && minus_di > plus_di;
+   const bool buy_strength = adx >= InpMinimumADX && plus_di > minus_di && atr_ok;
+   const bool sell_strength = adx >= InpMinimumADX && minus_di > plus_di && atr_ok;
+   
+   // New signal factors - 7 improvements
+   double atr_percentile = 0.0;
+   const bool buy_volatility = VolatilityPercentile(atr, atr_percentile);
+   const bool sell_volatility = buy_volatility;
+   
+   const bool buy_timeofday = TimeOfDayOK();
+   const bool sell_timeofday = buy_timeofday;
+   
+   const bool buy_ema_slope = EMASlope(1, fast, slow, close_price);
+   const bool sell_ema_slope = EMASlope(-1, fast, slow, close_price);
+   
+   const bool buy_prev_strength = PreviousCandleStrength();
+   const bool sell_prev_strength = buy_prev_strength;
+   
+   double m5_highest = 0.0, m5_lowest = 0.0;
+   const bool buy_m5_confirm = M5BreakoutConfirmation(1, m5_highest, m5_lowest);
+   const bool sell_m5_confirm = M5BreakoutConfirmation(-1, m5_highest, m5_lowest);
+   
+   double stoch_k = 0.0;
+   const bool buy_stochastic = StochasticSignal(1, stoch_k);
+   const bool sell_stochastic = StochasticSignal(-1, stoch_k);
+   
+   const bool buy_tickvol = TickVolumeConfirmation();
+   const bool sell_tickvol = buy_tickvol;
+   
    factor_buy_h1 = buy_h1;
    factor_sell_h1 = sell_h1;
    factor_buy_h4 = buy_h4;
@@ -1383,21 +1609,39 @@ int Signal(double &atr, string &detail, int &buy_checks, int &sell_checks,
    factor_sell_momentum = sell_momentum;
    factor_buy_strength = buy_strength;
    factor_sell_strength = sell_strength;
+   factor_buy_volatility = buy_volatility;
+   factor_sell_volatility = sell_volatility;
+   factor_buy_timeofday = buy_timeofday;
+   factor_sell_timeofday = sell_timeofday;
+   factor_buy_ema_slope = buy_ema_slope;
+   factor_sell_ema_slope = sell_ema_slope;
+   factor_buy_prev_strength = buy_prev_strength;
+   factor_sell_prev_strength = sell_prev_strength;
+   factor_buy_m5_confirm = buy_m5_confirm;
+   factor_sell_m5_confirm = sell_m5_confirm;
+   factor_buy_stochastic = buy_stochastic;
+   factor_sell_stochastic = sell_stochastic;
+   factor_buy_tickvol = buy_tickvol;
+   factor_sell_tickvol = sell_tickvol;
 
    buy_checks = (int)buy_h1 + (int)buy_h4 + (int)buy_breakout +
-                (int)buy_momentum + (int)buy_strength;
+                (int)buy_momentum + (int)buy_strength + (int)buy_volatility +
+                (int)buy_timeofday + (int)buy_ema_slope + (int)buy_prev_strength +
+                (int)buy_m5_confirm + (int)buy_stochastic + (int)buy_tickvol;
    sell_checks = (int)sell_h1 + (int)sell_h4 + (int)sell_breakout +
-                 (int)sell_momentum + (int)sell_strength;
+                 (int)sell_momentum + (int)sell_strength + (int)sell_volatility +
+                 (int)sell_timeofday + (int)sell_ema_slope + (int)sell_prev_strength +
+                 (int)sell_m5_confirm + (int)sell_stochastic + (int)sell_tickvol;
    if(buy_h1 && buy_h4)
       current_trend = "BUY";
    else if(sell_h1 && sell_h4)
       current_trend = "SELL";
 
-   detail = StringFormat("BUY %d/5 | SELL %d/5 | RSI %.1f | ADX %.1f | ATR %.2f",
+   detail = StringFormat("BUY %d/12 | SELL %d/12 | RSI %.1f | ADX %.1f | ATR %.2f",
                          buy_checks, sell_checks, rsi, adx, atr);
-   if(buy_checks == 5)
+   if(buy_checks == 12)
       return 1;
-   if(sell_checks == 5)
+   if(sell_checks == 12)
       return -1;
    return 0;
 }
@@ -1602,7 +1846,7 @@ void UpdateChart()
    else if(real_account && !InpConfirmLiveAccount)
       mode = "LIVE LOCKED";
    Comment("Exness Guard v1.32\n",
-           active_symbol, " | H1/H4 trend breakout\n",
+           active_symbol, " | M30/H1/H4 trend breakout\n",
            "Risk: ", DoubleToString(InpRiskPercent, 2), "% | ", mode, "\n",
            status_text);
 }
@@ -1645,17 +1889,21 @@ int OnInit()
       StringFind(InpDashboardFileName, "/") >= 0)
       return INIT_PARAMETERS_INCORRECT;
 
-   fast_handle = iMA(active_symbol, InpSignalTimeframe, InpFastEMA, 0, MODE_EMA, PRICE_CLOSE);
-   slow_handle = iMA(active_symbol, InpSignalTimeframe, InpSlowEMA, 0, MODE_EMA, PRICE_CLOSE);
+   fast_handle = iMA(active_symbol, InpTrendTimeframe1, InpFastEMA, 0, MODE_EMA, PRICE_CLOSE);
+   slow_handle = iMA(active_symbol, InpTrendTimeframe1, InpSlowEMA, 0, MODE_EMA, PRICE_CLOSE);
    trend_fast_handle = iMA(active_symbol, InpTrendTimeframe, InpTrendFastEMA, 0, MODE_EMA, PRICE_CLOSE);
    trend_slow_handle = iMA(active_symbol, InpTrendTimeframe, InpTrendSlowEMA, 0, MODE_EMA, PRICE_CLOSE);
    rsi_handle = iRSI(active_symbol, InpSignalTimeframe, InpRSIPeriod, PRICE_CLOSE);
    adx_handle = iADX(active_symbol, InpSignalTimeframe, InpADXPeriod);
    atr_handle = iATR(active_symbol, InpSignalTimeframe, InpATRPeriod);
+   m5_fast_handle = iMA(active_symbol, PERIOD_M5, InpFastEMA, 0, MODE_EMA, PRICE_CLOSE);
+   m5_slow_handle = iMA(active_symbol, PERIOD_M5, InpSlowEMA, 0, MODE_EMA, PRICE_CLOSE);
+   stochastic_handle = iStochastic(active_symbol, InpSignalTimeframe, InpStochK, InpStochD, InpStochSlowing, MODE_SMA, STO_LOWHIGH);
    if(fast_handle == INVALID_HANDLE || slow_handle == INVALID_HANDLE ||
       trend_fast_handle == INVALID_HANDLE || trend_slow_handle == INVALID_HANDLE ||
       rsi_handle == INVALID_HANDLE || adx_handle == INVALID_HANDLE ||
-      atr_handle == INVALID_HANDLE)
+      atr_handle == INVALID_HANDLE || m5_fast_handle == INVALID_HANDLE ||
+      m5_slow_handle == INVALID_HANDLE || stochastic_handle == INVALID_HANDLE)
       return INIT_FAILED;
 
    LoadPersistentState();
@@ -1669,7 +1917,7 @@ int OnInit()
       SavePersistentState();
    }
    trade.SetExpertMagicNumber(InpMagicNumber);
-   status_text = "Ready; waiting for a closed H1 candle";
+   status_text = "Ready; waiting for a closed 30M candle";
    JournalActivity("EA_START", "Exness Guard v1.32 initialized in " +
                    DashboardMode());
    EventSetTimer(InpDashboardRefreshSec);
@@ -1790,22 +2038,22 @@ void OnTick()
    signal_sell_checks = sell_checks;
    trend_bias = current_trend;
    signal_detail = detail;
-   JournalActivity("H1_EVALUATION", detail);
+   JournalActivity("M30_EVALUATION", detail);
    if(InpEnableTrendAlerts && current_trend != "WAIT" &&
       current_trend != previous_trend)
       QueueAlert("TREND",
-         StringFormat("%s H1/H4 trend changed to %s | %s",
+         StringFormat("%s 30M/H1/H4 trend changed to %s | %s",
                       active_symbol, current_trend, detail));
    if(direction == 0)
    {
       signal_side = "WAIT";
       status_text = "WAIT | " + detail;
       const int best_checks = MathMax(buy_checks, sell_checks);
-      if(InpEnableNearSignalAlerts && best_checks >= 4)
+      if(InpEnableNearSignalAlerts && best_checks >= 9)
       {
          const string near_side = buy_checks >= sell_checks ? "BUY" : "SELL";
          QueueAlert("WATCH",
-            StringFormat("%s %s setup forming | %d/5 checks | NO TRADE YET",
+            StringFormat("%s %s setup forming | %d/12 checks | NO TRADE YET",
                          active_symbol, near_side, best_checks));
       }
    }

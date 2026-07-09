@@ -1,0 +1,29 @@
+# ── Runtime outputs (contain account/price data — never commit) ──────────
+**/runtime/live.json
+**/runtime/btc-live.json
+**/runtime/activity-*.csv
+**/runtime/relay.log
+**/runtime/watchdog.log
+**/runtime/watchdog-state.json
+**/runtime/signals-history.json
+
+# ── Live dashboard feed (SignalForge) ─────────────────────────────────────
+01-SignalForge-XAUUSD/runtime/
+
+# ── Compiled MT5 binaries ─────────────────────────────────────────────────
+**/*.ex5
+
+# ── Compile logs ──────────────────────────────────────────────────────────
+**/mt5/compile*.log
+
+# ── Local config (contains personal data) ────────────────────────────────
+**/tools/whatsapp-relay/config.json
+
+# ── Python cache ──────────────────────────────────────────────────────────
+**/__pycache__/
+**/*.pyc
+
+# ── OS / editor ───────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp

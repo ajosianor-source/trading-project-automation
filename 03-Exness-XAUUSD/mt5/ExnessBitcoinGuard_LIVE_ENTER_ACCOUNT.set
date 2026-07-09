@@ -1,5 +1,5 @@
-InpAllowedSymbolRoot=BTCUSD
-InpSignalTimeframe=16385
+﻿InpAllowedSymbolRoot=BTCUSD
+InpSignalTimeframe=16414
 InpTrendTimeframe=16388
 InpFastEMA=20
 InpSlowEMA=55

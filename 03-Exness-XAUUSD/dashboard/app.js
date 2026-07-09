@@ -50,7 +50,11 @@ function demoData() {
       factors: {
         h1: { buy: true, sell: false }, h4: { buy: true, sell: false },
         breakout: { buy: false, sell: false }, momentum: { buy: true, sell: false },
-        strength: { buy: false, sell: false }
+        strength: { buy: false, sell: false },
+        volatility: { buy: true, sell: true }, timeofday: { buy: true, sell: true },
+        emaslope: { buy: true, sell: false }, prevstrength: { buy: true, sell: true },
+        m5confirm: { buy: false, sell: false }, stochastic: { buy: true, sell: false },
+        tickvol: { buy: true, sell: true }
       }
     },
     risk: {
@@ -210,7 +214,11 @@ function renderPosition(position, currency) {
 
 function renderReadiness(market) {
   const factors = market?.factors || {};
-  const labels = [["H1", "h1"], ["H4", "h4"], ["BREAK", "breakout"], ["MOM", "momentum"], ["ADX", "strength"]];
+  const labels = [
+    ["M30", "h1"], ["H4", "h4"], ["BREAK", "breakout"], ["MOM", "momentum"], ["ADX", "strength"],
+    ["VOL%", "volatility"], ["TIME", "timeofday"], ["SLOPE", "emaslope"],
+    ["PREV", "prevstrength"], ["M5", "m5confirm"], ["STOCH", "stochastic"], ["TVOL", "tickvol"]
+  ];
   $("#factorList").innerHTML = labels.map(([label, key]) => {
     const value = factors[key] || {};
     const side = value.buy ? "buy" : value.sell ? "sell" : "";
@@ -223,7 +231,7 @@ function updateCountdown(nextBarTime) {
   const remaining = Math.max(0, Number(nextBarTime || 0) - Math.floor(Date.now() / 1000));
   const minutes = Math.floor(remaining / 60);
   const seconds = remaining % 60;
-  setText("#nextH1", nextBarTime ? `NEXT H1 ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}` : "NEXT H1 --:--");
+  setText("#nextH1", nextBarTime ? `NEXT 30M ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}` : "NEXT 30M --:--");
 }
 
 function renderShadow(shadow, currency) {
@@ -462,7 +470,30 @@ async function connectLive() {
   }
 }
 
+async function fetchLive() {
+  try {
+    const response = await fetch("/live.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (Number(data.schema) < 1 || Number(data.schema) > 2) throw new Error("Unsupported schema");
+    state.live = true;
+    render(data, true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function restoreConnection() {
+  // Always try HTTP server first (works on any refresh with no prompts)
+  const ok = await fetchLive();
+  if (ok) {
+    clearInterval(state.timer);
+    state.timer = setInterval(fetchLive, 2000);
+    return;
+  }
+
+  // Fallback: try saved file handle from IndexedDB (file:// mode)
   if (!window.showOpenFilePicker || !window.indexedDB) return;
   try {
     const handle = await loadHandle();
@@ -499,3 +530,86 @@ setInterval(() => state.lastData && updateCountdown(state.lastData.market?.nextB
 
 render(demoData(), false);
 restoreConnection();
+
+// ── Signal History ────────────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const r = await fetch("/signals-history.json", { cache: "no-store" });
+    if (!r.ok) return;
+    const h = await r.json();
+    renderHistory(h);
+  } catch {
+    // not served via HTTP — history requires the local dashboard server
+  }
+}
+
+function renderHistory(h) {
+  const s = h.summary || {};
+  const signals = h.signals || [];
+  const closed = s.closed || 0;
+
+  setText("#hTotal", `${s.total_signals || 0} (${closed} closed)`);
+  setText("#hWinRate", closed ? `${s.win_rate_pct}%` : "--%");
+  setText("#hPF", closed ? s.profit_factor : "--");
+  setText("#hNetR", closed ? `${s.net_r}R` : "--");
+  setText("#hConsec", closed ? s.max_consec_losses : "--");
+  setText("#hDD", closed ? `${s.max_drawdown_r}R` : "--");
+
+  // Validation gates
+  const gates = [
+    { label: "Win rate ≥55%", ok: s.validation?.win_rate_ok, pending: !closed },
+    { label: "Profit factor ≥1.8", ok: s.validation?.profit_factor_ok, pending: !closed },
+    { label: "Max consec losses ≤4", ok: s.validation?.consec_losses_ok, pending: !closed },
+    { label: `≥50 trades (${closed}/50)`, ok: s.validation?.min_trades_reached, pending: closed < 50 },
+  ];
+  $("#historyGates").innerHTML = gates.map(g => {
+    const cls = g.pending ? "pending" : g.ok ? "pass" : "fail";
+    const icon = g.pending ? "○" : g.ok ? "✓" : "✗";
+    return `<div class="gate ${cls}">${icon} ${g.label}</div>`;
+  }).join("");
+
+  const pill = $("#historyState");
+  if (!closed) {
+    pill.textContent = "COLLECTING"; pill.className = "pill neutral";
+  } else if (Object.values(s.validation || {}).every(Boolean)) {
+    pill.textContent = "PASSING"; pill.className = "pill healthy";
+  } else {
+    pill.textContent = `${Object.values(s.validation || {}).filter(Boolean).length}/4 GATES`; pill.className = "pill locked";
+  }
+
+  // Table rows
+  const tbody = $("#historyBody");
+  if (!signals.length) return;
+  tbody.innerHTML = signals.map(sig => {
+    const isOpen = sig.status === "OPEN";
+    const isWin = sig.outcome === "TARGET";
+    const rowCls = isOpen ? "open-row" : "";
+    const outcomePill = isOpen
+      ? `<span class="pill-open">OPEN</span>`
+      : isWin
+        ? `<span class="pill-win">TARGET</span>`
+        : `<span class="pill-loss">STOP</span>`;
+    const resultCls = isOpen ? "" : (isWin ? "win" : "loss");
+    const checks = sig.side === "BUY"
+      ? `${sig.buy_checks_at_open}/12 BUY`
+      : `${sig.sell_checks_at_open}/12 SELL`;
+    return `<tr class="${rowCls}">
+      <td>${sig.id}</td>
+      <td>${sig.open_time_str || "--"}</td>
+      <td>${sig.side}</td>
+      <td>${Number(sig.entry).toFixed(3)}</td>
+      <td>${Number(sig.sl).toFixed(3)}</td>
+      <td>${Number(sig.tp).toFixed(3)}</td>
+      <td>${checks}</td>
+      <td>${outcomePill}</td>
+      <td class="${resultCls}">${sig.result_r !== null ? `${Number(sig.result_r).toFixed(2)}R` : "--"}</td>
+      <td>${sig.mfe_r !== null ? `${Number(sig.mfe_r).toFixed(2)}R` : "--"}</td>
+      <td>${sig.mae_r !== null ? `${Number(sig.mae_r).toFixed(2)}R` : "--"}</td>
+      <td>${sig.duration_hours !== null ? `${sig.duration_hours}h` : "active"}</td>
+      <td>${sig.status}</td>
+    </tr>`;
+  }).join("");
+}
+
+loadHistory();
+setInterval(loadHistory, 30000);  // refresh history every 30 seconds

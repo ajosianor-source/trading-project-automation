@@ -228,6 +228,31 @@ button:hover { transform: translateY(-2px); }
 .connect-panel li p { margin: 2px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 code { display: block; margin-top: 8px; color: var(--ink); font-size: 10px; }
 .connect-note { margin: 14px 0 0; color: var(--muted); font-size: 11px; }
+
+/* Signal History Panel */
+.history-panel { grid-column: 1 / -1; }
+.history-summary { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin-bottom: 14px; }
+.history-summary > div { padding: 14px 18px; border-right: 1px solid var(--line); }
+.history-summary > div:last-child { border-right: none; }
+.history-summary span { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.history-summary strong { font-size: 20px; font-weight: 700; }
+.history-gates { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.history-gates .gate { display: flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; border: 1px solid var(--line); }
+.history-gates .gate.pass { border-color: rgba(74,222,128,.3); color: #4ade80; background: rgba(74,222,128,.07); }
+.history-gates .gate.fail { border-color: rgba(239,68,68,.3); color: #ef4444; background: rgba(239,68,68,.07); }
+.history-gates .gate.pending { color: var(--muted); }
+.history-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; }
+#historyTable { width: 100%; border-collapse: collapse; font-size: 12px; }
+#historyTable th { padding: 9px 12px; text-align: left; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--line); white-space: nowrap; }
+#historyTable td { padding: 9px 12px; border-bottom: 1px solid rgba(255,255,255,.04); white-space: nowrap; }
+#historyTable tr:last-child td { border-bottom: none; }
+#historyTable .win { color: #4ade80; }
+#historyTable .loss { color: #ef4444; }
+#historyTable .open-row { color: var(--gold); }
+#historyTable .pill-win { background: rgba(74,222,128,.15); color: #4ade80; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+#historyTable .pill-loss { background: rgba(239,68,68,.15); color: #ef4444; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+#historyTable .pill-open { background: rgba(231,189,106,.15); color: var(--gold); padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+
 footer { width: min(1500px, calc(100% - 44px)); margin: auto; padding: 24px 0 34px; display: flex; justify-content: space-between; color: var(--muted); border-top: 1px solid var(--line); font-size: 11px; }
 
 @media (max-width: 1050px) {
@@ -236,6 +261,7 @@ footer { width: min(1500px, calc(100% - 44px)); margin: auto; padding: 24px 0 34
   .command-panel, .risk-panel, .position-panel, .health-panel, .alerts-panel, .news-panel, .shadow-panel, .execution-panel { grid-column: span 6; }
   .chart-panel { grid-column: span 12; }
   .connect-panel ol { grid-template-columns: 1fr; }
+  .history-summary { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 700px) {
   main { width: min(100% - 28px, 1500px); padding-top: 38px; }
@@ -253,4 +279,5 @@ footer { width: min(1500px, calc(100% - 44px)); margin: auto; padding: 24px 0 34
   .notice { align-items: flex-start; gap: 12px; }
   .readonly { display: none; }
   footer { width: calc(100% - 28px); flex-direction: column; gap: 6px; }
+  .history-summary { grid-template-columns: repeat(2, 1fr); }
 }

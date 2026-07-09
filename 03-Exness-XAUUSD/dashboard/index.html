@@ -22,7 +22,7 @@
   <main>
     <section class="hero">
       <div>
-        <p class="eyebrow"><span id="heroInstrument">XAUUSD</span> · H1 SYSTEM</p>
+        <p class="eyebrow"><span id="heroInstrument">XAUUSD</span> · M30 SYSTEM</p>
         <h1>Live risk, without<br><em>the noise.</em></h1>
         <p class="lede">A read-only window into Exness Gold Guard. This page can monitor the EA, but it cannot place or modify trades.</p>
       </div>
@@ -60,7 +60,7 @@
           <div>
             <span class="symbol" id="symbol">XAUUSD</span>
             <strong id="price">2,330.000</strong>
-            <p id="signalDetail">Waiting for the next completed H1 candle.</p>
+            <p id="signalDetail">Waiting for the next completed 30M candle.</p>
           </div>
         </div>
         <div class="quote-row">
@@ -70,10 +70,10 @@
         </div>
         <div class="engine-status">
           <span>EA status</span>
-          <strong id="engineStatus">Ready; waiting for a closed H1 candle</strong>
+          <strong id="engineStatus">Ready; waiting for a closed 30M candle</strong>
         </div>
         <div class="readiness">
-          <div class="readiness-head"><span>Signal factors</span><strong id="nextH1">NEXT H1 --:--</strong></div>
+          <div class="readiness-head"><span>Signal factors</span><strong id="nextH1">NEXT 30M --:--</strong></div>
           <div id="factorList" class="factor-list"></div>
         </div>
       </article>
@@ -81,7 +81,7 @@
       <article class="panel chart-panel">
         <div class="panel-head">
           <div><p class="label">MARKET STRUCTURE</p><h2><span id="chartInstrument">XAUUSD</span> candles</h2></div>
-          <span class="timeframe">H1</span>
+          <span class="timeframe">M30</span>
         </div>
         <canvas id="chart" aria-label="Recent XAUUSD candlestick chart"></canvas>
         <div class="chart-legend"><span><i class="up"></i>Bullish</span><span><i class="down"></i>Bearish</span><span>Latest candle may be forming</span></div>
@@ -215,6 +215,46 @@
           <li><span>3</span><p>Click <strong>Connect MT5 live file</strong> and select:<code>...\ExnessGoldGuard\live.json (gold)<br>...\ExnessGoldGuard\btc-live.json (bitcoin)</code></p></li>
         </ol>
         <p class="connect-note">The browser remembers the selected file handle when permission allows. Reconnect after browser permission is cleared.</p>
+      </article>
+
+      <article class="panel history-panel" style="grid-column:1/-1">
+        <div class="panel-head">
+          <div><p class="label">VALIDATION LOG</p><h2>Signal history</h2></div>
+          <span id="historyState" class="pill neutral">LOADING</span>
+        </div>
+        <div class="history-summary" id="historySummary">
+          <div><span>Signals</span><strong id="hTotal">0</strong></div>
+          <div><span>Win rate</span><strong id="hWinRate">--%</strong></div>
+          <div><span>Profit factor</span><strong id="hPF">--</strong></div>
+          <div><span>Net R</span><strong id="hNetR">--</strong></div>
+          <div><span>Max consec losses</span><strong id="hConsec">--</strong></div>
+          <div><span>Max drawdown R</span><strong id="hDD">--</strong></div>
+        </div>
+        <div class="history-gates" id="historyGates"></div>
+        <div class="history-table-wrap">
+          <table id="historyTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Opened</th>
+                <th>Side</th>
+                <th>Entry</th>
+                <th>SL</th>
+                <th>TP</th>
+                <th>Checks</th>
+                <th>Outcome</th>
+                <th>Result R</th>
+                <th>MFE</th>
+                <th>MAE</th>
+                <th>Duration</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="historyBody">
+              <tr><td colspan="13" style="text-align:center;padding:1.5rem;opacity:.5">No signals recorded yet. History builds as shadow trades open and close.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </article>
     </section>
   </main>

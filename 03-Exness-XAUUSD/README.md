@@ -3,16 +3,25 @@
 An independent MetaTrader 5 Expert Advisor for Exness XAUUSD and BTCUSD. It is
 separate from projects `01` and `02`.
 
-Current build: **v1.32**. See `docs/VALIDATION.md` before enabling any live
+Current build: **v1.40**. See `docs/VALIDATION.md` before enabling any live
 execution. The current decision is signals-only forward observation: XAUUSDm
 is the stronger candidate, while BTCUSDm remains borderline.
 
 ## What it does
 
-- Evaluates signals only when an H1 candle closes.
-- Requires H1 EMA trend and slope, H4 EMA trend, RSI momentum, ADX/DI strength,
-  and a breakout of the previous 20 completed H1 candles.
-- Places an ATR-based stop at 1.5 ATR and target at 3 ATR.
+- Evaluates signals on every M30 candle close (instead of hourly).
+- Requires all 12 alignment factors:
+  - **Trend**: H1 EMA crossover + momentum, H4 EMA trend
+  - **Entry**: M30 2-candle breakout (breakout levels), RSI momentum (58/42 bounds)
+  - **Strength**: ADX ≥25 with directional +DI/-DI, ATR minimum
+  - **Volatility**: ATR must exceed 60th percentile of last 50 bars
+  - **Timing**: No entries during quiet hours (20:00–08:00 server time)
+  - **Trend slope**: Fast EMA must be ≥0.2% separated from slow EMA
+  - **Candle quality**: Previous M30 candle must have strong body (low wick ratio)
+  - **M5 confirmation**: M5 timeframe must also break its 5-bar levels
+  - **Stochastic extremes**: K line must be >80 (buy) or <20 (sell)
+  - **Tick volume**: Current M30 bar tick volume ≥70% of 20-bar average
+- Places an ATR-based stop at 1.4 ATR and target at 2.8 ATR.
 - Sizes each position to risk no more than 0.02% of current equity.
 - Allows only one Guard-family position across XAUUSD and BTCUSD at a time.
 - Blocks excessive spread, rollover-hour entries, more than five entries per
