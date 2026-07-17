@@ -130,9 +130,12 @@ so event-window behavior must be forward-tested separately.
 
 ## Live dashboard
 
-Open `dashboard/index.html` in current Microsoft Edge or Google Chrome. The
-dashboard opens with safe preview data and cannot place, close, or modify
-orders.
+Security and local-service controls are documented in `docs/SECURITY.md`.
+
+Open the dashboard through `tools/dashboard_server.py` at
+`http://localhost:3030` for the most stable refresh behavior. Opening
+`dashboard/index.html` directly still works, but it may rely on browser file
+permissions for live refreshes.
 
 When the EA is attached, it updates this read-only file every two seconds:
 
@@ -142,8 +145,9 @@ Gold:
 Bitcoin:
 `%APPDATA%\MetaQuotes\Terminal\Common\Files\ExnessGoldGuard\btc-live.json`
 
-Click **Connect MT5 live file**, browse to that file, and approve read access.
-The dashboard then shows:
+The dashboard can auto-load the runtime feed from the local server. If you open
+the HTML file directly, click **Connect MT5 live file**, browse to that file,
+and approve read access. The dashboard then shows:
 
 - MT5 heartbeat, Exness verification, Algo Trading state, and execution lock;
 - balance, equity, free margin, and margin level;
@@ -163,9 +167,9 @@ confirm `InpExportDashboard = true`.
 
 ## Independent watchdog
 
-Run `Start-ExnessGuard-Watchdog.cmd` after MT5 and the WhatsApp relay. It checks
-the feed heartbeat and relay every ten seconds, writes a deduplicated health
-log, and sends one stale-feed warning and one recovery alert. See
+Run `Start-ExnessGuard-Watchdog.cmd` after MT5. It checks the feed heartbeat
+every ten seconds and writes a deduplicated health log. External relay alerts
+are disabled by default and require explicit authenticated configuration. See
 `docs/WATCHDOG.md`.
 
 The watchdog and shadow tracker are monitoring tools. They do not make the

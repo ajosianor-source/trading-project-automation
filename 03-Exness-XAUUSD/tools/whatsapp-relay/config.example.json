@@ -1,3 +1,5 @@
 {
-  "whatsapp_number": ""
+  "relay_token": "generate-at-least-32-random-characters",
+  "telegram_bot_token": "",
+  "telegram_chat_id": ""
 }

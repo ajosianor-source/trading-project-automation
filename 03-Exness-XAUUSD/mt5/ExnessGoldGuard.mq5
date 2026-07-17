@@ -18,11 +18,11 @@ input int             InpTrendSlowEMA    = 200;
 input int             InpRSIPeriod       = 14;
 input int             InpADXPeriod       = 14;
 input int             InpATRPeriod       = 14;
-input int             InpBreakoutBars    = 20;
-input double          InpMinimumADX      = 25.0;
+input int             InpBreakoutBars    = 12;
+input double          InpMinimumADX      = 22.0;
 input double          InpMinimumATRPercent = 0.05;
-input double          InpBuyRSI          = 58.0;
-input double          InpSellRSI         = 42.0;
+input double          InpBuyRSI          = 52.0;
+input double          InpSellRSI         = 48.0;
 input double          InpStopATR         = 1.4;
 input double          InpTargetATR       = 2.8;
 
@@ -53,6 +53,9 @@ input int             InpMaxTickAgeSeconds    = 10;
 input bool            InpAvoidRolloverHour    = true;
 input int             InpRolloverHourServer   = 23;
 
+input group "Audited capital baseline"
+input long            InpRiskBaselineEpoch    = 0;
+
 input group "Execution lock"
 input bool            InpEnableTrading        = false;
 input bool            InpConfirmLiveAccount   = false;
@@ -65,7 +68,7 @@ input ulong           InpMagicNumber          = 26070103;
 input group "Alerts and messaging"
 input bool            InpEnableTerminalAlerts = true;
 input bool            InpEnablePush           = true;
-input bool            InpEnableWhatsApp       = true;
+input bool            InpEnableWhatsApp       = false;
 input string          InpWhatsAppRelayUrl     = "http://127.0.0.1:8787/alert";
 input int             InpWhatsAppTimeoutMs    = 3000;
 input bool            InpEnableTrendAlerts    = true;
@@ -91,6 +94,7 @@ input group "Shadow forward testing"
 input bool            InpEnableShadowTrading   = true;
 input bool            InpEnableShadowAlerts    = true;
 input double          InpShadowReferenceEquity = 1000000.0;
+input int             InpShadowCandidateChecks = 10;
 
 input group "Read-only dashboard"
 input bool            InpExportDashboard      = true;
@@ -120,6 +124,11 @@ string   signal_detail = "Waiting for first closed 30M candle";
 int      signal_buy_checks = 0;
 int      signal_sell_checks = 0;
 string   trend_bias = "WAIT";
+string   trend_previous_bias = "WAIT";
+bool     trend_reversal = false;
+bool     trend_exit_warning = false;
+string   trend_exit_state = "NONE";
+string   trend_exit_reason = "";
 string   last_alert_level = "NONE";
 string   last_alert_message = "";
 datetime last_alert_time = 0;
@@ -165,6 +174,10 @@ bool     factor_buy_stochastic = false;
 bool     factor_sell_stochastic = false;
 bool     factor_buy_tickvol = false;
 bool     factor_sell_tickvol = false;
+bool     factor_buy_sr = false;
+bool     factor_sell_sr = false;
+string   shadow_candidate_side = "NONE";
+bool     shadow_candidate_qualified = false;
 bool     shadow_open = false;
 int      shadow_direction = 0;
 datetime shadow_open_time = 0;
@@ -178,12 +191,14 @@ double   shadow_mae_r = 0.0;
 int      shadow_trades = 0;
 int      shadow_wins = 0;
 int      shadow_losses = 0;
+int      shadow_consecutive_losses = 0;
 double   shadow_gross_win_r = 0.0;
 double   shadow_gross_loss_r = 0.0;
 double   shadow_net_r = 0.0;
 double   shadow_peak_r = 0.0;
 double   shadow_max_drawdown_r = 0.0;
 datetime last_shadow_save = 0;
+datetime last_dashboard_export = 0;
 int      execution_fills = 0;
 double   execution_slippage_total = 0.0;
 double   execution_slippage_max = 0.0;
@@ -308,39 +323,10 @@ void QueueAlert(const string level, const string message)
 
 void SendWhatsAppRelay(const string message)
 {
-   if(!InpEnableWhatsApp)
-   {
-      whatsapp_status = "DISABLED";
-      return;
-   }
-   char body[];
-   const int copied = StringToCharArray(StringSubstr(message, 0, 1500),
-                                        body, 0, WHOLE_ARRAY, CP_UTF8);
-   if(copied > 0)
-      ArrayResize(body, copied - 1);
-   char response[];
-   string response_headers = "";
-   const string headers = "Content-Type: text/plain; charset=utf-8\r\n";
-   ResetLastError();
-   const int status = WebRequest("POST", InpWhatsAppRelayUrl, headers,
-                                 InpWhatsAppTimeoutMs, body, response,
-                                 response_headers);
-   if(status == -1)
-   {
-      whatsapp_status = "FAILED";
-      whatsapp_error = GetLastError();
-      Print("Exness Guard: WhatsApp relay failed, error ", whatsapp_error,
-            ". Allow http://127.0.0.1:8787 in MT5 WebRequest settings.");
-      return;
-   }
-   if(status < 200 || status >= 300)
-   {
-      whatsapp_status = "FAILED";
-      whatsapp_error = status;
-      Print("Exness Guard: WhatsApp relay returned HTTP ", status);
-      return;
-   }
-   whatsapp_status = "SENT";
+   // External messaging is deliberately disabled in this hardened build.
+   // Terminal alerts and MT5 push notifications remain available without
+   // exposing a local unauthenticated HTTP command surface.
+   whatsapp_status = "DISABLED";
    whatsapp_error = 0;
 }
 
@@ -432,6 +418,24 @@ void LoadPersistentState()
                                GlobalVariableGet(StateKey("peak")));
       if(GlobalVariableCheck(StateKey("bar")))
          last_bar_time = (datetime)GlobalVariableGet(StateKey("bar"));
+
+      // A strictly increasing epoch permits an audited, one-time baseline
+      // adjustment after an external deposit or withdrawal. The stored marker
+      // prevents a restart from repeatedly erasing genuine trading losses.
+      const double applied_epoch = GlobalVariableCheck(StateKey("baseline_epoch"))
+         ? GlobalVariableGet(StateKey("baseline_epoch")) : 0.0;
+      if(InpRiskBaselineEpoch > 0 &&
+         (double)InpRiskBaselineEpoch > applied_epoch)
+      {
+         state_day = ServerDayId();
+         day_start_equity = equity;
+         equity_peak = equity;
+         GlobalVariableSet(StateKey("baseline_epoch"),
+                           (double)InpRiskBaselineEpoch);
+         Print("Risk baseline reset once for external capital flow; epoch ",
+               InpRiskBaselineEpoch, ", equity ",
+               DoubleToString(equity, 2));
+      }
    }
    RefreshPersistentRiskState();
 }
@@ -510,6 +514,7 @@ void SaveShadowState()
    GlobalVariableSet(StateKey("shadow_trades"), shadow_trades);
    GlobalVariableSet(StateKey("shadow_wins"), shadow_wins);
    GlobalVariableSet(StateKey("shadow_losses"), shadow_losses);
+   GlobalVariableSet(StateKey("shadow_consecutive_losses"), shadow_consecutive_losses);
    GlobalVariableSet(StateKey("shadow_gross_win"), shadow_gross_win_r);
    GlobalVariableSet(StateKey("shadow_gross_loss"), shadow_gross_loss_r);
    GlobalVariableSet(StateKey("shadow_net"), shadow_net_r);
@@ -540,6 +545,7 @@ void LoadShadowState()
    shadow_trades = (int)StateValue("shadow_trades");
    shadow_wins = (int)StateValue("shadow_wins");
    shadow_losses = (int)StateValue("shadow_losses");
+   shadow_consecutive_losses = (int)StateValue("shadow_consecutive_losses");
    shadow_gross_win_r = StateValue("shadow_gross_win");
    shadow_gross_loss_r = StateValue("shadow_gross_loss");
    shadow_net_r = StateValue("shadow_net");
@@ -695,11 +701,13 @@ void UpdateShadowTrade()
    if(result_r > 0.0)
    {
       shadow_wins++;
+      shadow_consecutive_losses = 0;
       shadow_gross_win_r += result_r;
    }
    else
    {
       shadow_losses++;
+      shadow_consecutive_losses++;
       shadow_gross_loss_r += MathAbs(result_r);
    }
    shadow_net_r += result_r;
@@ -1099,6 +1107,109 @@ string CandlesJson()
    return json + "]";
 }
 
+string StructureJson()
+{
+   const int window = MathMax(2, MathMin(InpBreakoutBars, InpDashboardCandleBars));
+   double highs[];
+   double lows[];
+   ArrayResize(highs, window);
+   ArrayResize(lows, window);
+   if(CopyHigh(active_symbol, InpSignalTimeframe, 1, window, highs) != window ||
+      CopyLow(active_symbol, InpSignalTimeframe, 1, window, lows) != window)
+      return "{\"support\":null,\"resistance\":null,\"window\":" + IntegerToString(window) + "}";
+
+   const double support = lows[ArrayMinimum(lows)];
+   const double resistance = highs[ArrayMaximum(highs)];
+   return "{\"support\":" + JNumber(support, 3) +
+      ",\"resistance\":" + JNumber(resistance, 3) +
+      ",\"window\":" + IntegerToString(window) + "}";
+}
+
+string ValidationJson()
+{
+   const double win_rate = shadow_trades > 0
+      ? (double)shadow_wins / shadow_trades * 100.0 : 0.0;
+   const double profit_factor = shadow_gross_loss_r > 0.0
+      ? shadow_gross_win_r / shadow_gross_loss_r
+      : (shadow_gross_win_r > 0.0 ? 999.0 : 0.0);
+   const bool min_trades = shadow_trades >= 50;
+   const bool win_rate_ok = shadow_trades > 0 && win_rate >= 55.0;
+   const bool profit_factor_ok = shadow_trades > 0 && profit_factor >= 1.8;
+   const bool drawdown_ok = shadow_max_drawdown_r <= 0.15;
+   const bool consec_losses_ok = shadow_consecutive_losses <= 4;
+   return "{\"shadowTrades\":" + IntegerToString(shadow_trades) +
+      ",\"shadowWins\":" + IntegerToString(shadow_wins) +
+      ",\"shadowLosses\":" + IntegerToString(shadow_losses) +
+      ",\"shadowConsecutiveLosses\":" + IntegerToString(shadow_consecutive_losses) +
+      ",\"shadowWinRate\":" + JNumber(win_rate, 2) +
+      ",\"shadowProfitFactor\":" + JNumber(profit_factor, 2) +
+      ",\"shadowDrawdownR\":" + JNumber(shadow_max_drawdown_r, 3) +
+      ",\"minTradesReached\":" + JBool(min_trades) +
+      ",\"winRateOk\":" + JBool(win_rate_ok) +
+      ",\"profitFactorOk\":" + JBool(profit_factor_ok) +
+      ",\"drawdownOk\":" + JBool(drawdown_ok) +
+      ",\"consecLossesOk\":" + JBool(consec_losses_ok) +
+      ",\"ready\":" + JBool(min_trades && win_rate_ok && profit_factor_ok && drawdown_ok && consec_losses_ok) + "}";
+}
+
+string PositionSide()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      const ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || PositionGetString(POSITION_SYMBOL) != active_symbol ||
+         (ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumber)
+         continue;
+
+      const ENUM_POSITION_TYPE type =
+         (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      return type == POSITION_TYPE_BUY ? "BUY" : "SELL";
+   }
+   return "FLAT";
+}
+
+bool TrendExitWarning(const int buy_checks, const int sell_checks,
+                      const string current_trend, string &reason,
+                      string &state)
+{
+   reason = "";
+   state = "NONE";
+   const string position_side = PositionSide();
+   if(position_side == "FLAT")
+      return false;
+
+   const int current_checks = position_side == "BUY" ? buy_checks : sell_checks;
+   const int opposite_checks = position_side == "BUY" ? sell_checks : buy_checks;
+   const int gap = current_checks - opposite_checks;
+
+   if(trend_reversal && current_trend != "WAIT")
+   {
+      reason = StringFormat("TREND REVERSAL: %s -> %s", trend_previous_bias,
+                            current_trend);
+      state = "NOW";
+      return true;
+   }
+
+   if(opposite_checks >= 8 && gap <= 2)
+   {
+      reason = StringFormat("%s weakening: opposite side at %d/12 vs %d/12",
+                            position_side, opposite_checks, current_checks);
+      state = "WATCH";
+      return true;
+   }
+
+   if(current_trend == "WAIT" && opposite_checks >= 9)
+   {
+      reason = StringFormat("Trend undecided but %s pressure is high (%d/12)",
+                            position_side == "BUY" ? "SELL" : "BUY",
+                            opposite_checks);
+      state = "WATCH";
+      return true;
+   }
+
+   return false;
+}
+
 void ExportDashboard()
 {
    if(!InpExportDashboard || active_symbol == "")
@@ -1123,13 +1234,19 @@ void ExportDashboard()
    const string login = IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN));
    const string login_tail = StringLen(login) > 4
       ? StringSubstr(login, StringLen(login) - 4) : login;
-   const datetime now = TimeTradeServer() > 0 ? TimeTradeServer() : TimeCurrent();
+   // A dashboard heartbeat describes the local EA process, not the broker
+   // clock. TimeTradeServer()/TimeCurrent() can freeze during a disconnect and
+   // make a healthy exporter look stale. TimeGMT() keeps advancing and also
+   // produces an unambiguous Unix timestamp across daylight-saving changes.
+   const datetime now = TimeGMT();
+   const datetime server_now = TimeTradeServer();
    const datetime current_bar =
       iTime(active_symbol, InpSignalTimeframe, 0);
    const datetime next_bar = current_bar > 0
       ? current_bar + PeriodSeconds(InpSignalTimeframe) : 0;
 
    string json = "{\"schema\":2,\"heartbeat\":" + IntegerToString((long)now) +
+      ",\"serverTime\":" + IntegerToString((long)server_now) +
       ",\"terminal\":{\"connected\":" +
          JBool(TerminalInfoInteger(TERMINAL_CONNECTED)) +
          ",\"algoTrading\":" +
@@ -1154,9 +1271,20 @@ void ExportDashboard()
          ",\"spreadPoints\":" + JNumber(spread_points, 1) +
          ",\"signal\":" + JString(signal_side) +
          ",\"trend\":" + JString(trend_bias) +
+         ",\"trendPrevious\":" + JString(trend_previous_bias) +
+         ",\"trendReversal\":" + JBool(trend_reversal) +
+         ",\"trendExitWarning\":" + JBool(trend_exit_warning) +
+         ",\"trendExitState\":" + JString(trend_exit_state) +
+         ",\"trendExitReason\":" + JString(trend_exit_reason) +
          ",\"buyChecks\":" + IntegerToString(signal_buy_checks) +
          ",\"sellChecks\":" + IntegerToString(signal_sell_checks) +
+         ",\"shadowCandidate\":" + JString(shadow_candidate_side) +
+         ",\"shadowCandidateQualified\":" +
+            JBool(shadow_candidate_qualified) +
+         ",\"shadowCandidateThreshold\":" +
+            IntegerToString(InpShadowCandidateChecks) +
          ",\"nextBarTime\":" + IntegerToString((long)next_bar) +
+         ",\"structure\":" + StructureJson() +
          ",\"factors\":{\"h1\":{\"buy\":" + JBool(factor_buy_h1) +
             ",\"sell\":" + JBool(factor_sell_h1) + "}" +
             ",\"h4\":{\"buy\":" + JBool(factor_buy_h4) +
@@ -1190,7 +1318,9 @@ void ExportDashboard()
                ",\"sell\":" + JBool(factor_sell_stochastic) + "}" +
             ",\"tickvol\":{\"buy\":" +
                JBool(factor_buy_tickvol) +
-               ",\"sell\":" + JBool(factor_sell_tickvol) + "}}" +
+               ",\"sell\":" + JBool(factor_sell_tickvol) + "}" +
+            ",\"sr\":{\"buy\":" + JBool(factor_buy_sr) +
+               ",\"sell\":" + JBool(factor_sell_sr) + "}}" +
          ",\"detail\":" + JString(signal_detail) + "}" +
       ",\"risk\":{\"riskPercent\":" + JNumber(InpRiskPercent, 3) +
          ",\"riskCash\":" + JNumber(equity * InpRiskPercent / 100.0, 2) +
@@ -1204,6 +1334,7 @@ void ExportDashboard()
          ",\"realizedToday\":" + JNumber(today_result, 2) + "}" +
       ",\"position\":" + PositionJson() +
       ",\"shadow\":" + ShadowJson() +
+      ",\"validation\":" + ValidationJson() +
       ",\"execution\":" + ExecutionJson() +
       ",\"alerts\":{\"lastLevel\":" + JString(last_alert_level) +
          ",\"lastMessage\":" + JString(last_alert_message) +
@@ -1244,6 +1375,7 @@ void ExportDashboard()
    FileWriteString(file, json);
    FileFlush(file);
    FileClose(file);
+   last_dashboard_export = TimeLocal();
 }
 
 bool HasOpenPosition()
@@ -1423,19 +1555,22 @@ bool PreviousCandleStrength()
 
 bool M5BreakoutConfirmation(const int direction, double &m5_highest, double &m5_lowest)
 {
+   if(InpM5BreakoutBars < 2)
+      return false;
+
    double m5_highs[];
    double m5_lows[];
    ArrayResize(m5_highs, InpM5BreakoutBars);
    ArrayResize(m5_lows, InpM5BreakoutBars);
    
-   if(CopyHigh(active_symbol, PERIOD_M5, 1, InpM5BreakoutBars, m5_highs) != InpM5BreakoutBars ||
-      CopyLow(active_symbol, PERIOD_M5, 1, InpM5BreakoutBars, m5_lows) != InpM5BreakoutBars)
+   if(CopyHigh(active_symbol, PERIOD_M5, 2, InpM5BreakoutBars, m5_highs) != InpM5BreakoutBars ||
+      CopyLow(active_symbol, PERIOD_M5, 2, InpM5BreakoutBars, m5_lows) != InpM5BreakoutBars)
       return false;
    
    m5_highest = m5_highs[ArrayMaximum(m5_highs)];
    m5_lowest = m5_lows[ArrayMinimum(m5_lows)];
    
-   const double m5_close = iClose(active_symbol, PERIOD_M5, 0);
+   const double m5_close = iClose(active_symbol, PERIOD_M5, 1);
    
    if(direction > 0)
       return m5_close > m5_highest;
@@ -1452,6 +1587,49 @@ bool StochasticSignal(const int direction, double &stoch_k)
       return stoch_k > 80.0;
    else
       return stoch_k < 20.0;
+}
+
+// Advanced S&R: Order Block detector (bonus factor - does not count toward 12/12 threshold)
+// Buy OB:  last bearish candle before a bullish impulse — price retesting that zone
+// Sell OB: last bullish candle before a bearish impulse — price retesting that zone
+bool OrderBlockSignal(const int direction)
+{
+   const int lookback = 30;
+   double closes[], opens[], highs[], lows[];
+   ArraySetAsSeries(closes, true);
+   ArraySetAsSeries(opens,  true);
+   ArraySetAsSeries(highs,  true);
+   ArraySetAsSeries(lows,   true);
+   if(CopyClose(active_symbol, InpSignalTimeframe, 1, lookback + 3, closes) < lookback + 3 ||
+      CopyOpen (active_symbol, InpSignalTimeframe, 1, lookback + 3, opens)  < lookback + 3 ||
+      CopyHigh (active_symbol, InpSignalTimeframe, 1, lookback + 3, highs)  < lookback + 3 ||
+      CopyLow  (active_symbol, InpSignalTimeframe, 1, lookback + 3, lows)   < lookback + 3)
+      return false;
+
+   const double current_close = closes[0];
+
+   for(int i = 1; i < lookback; i++)
+   {
+      const double next_body = MathAbs(closes[i-1] - opens[i-1]);
+      const double this_body = MathAbs(closes[i]   - opens[i]);
+      if(this_body <= 0.0 || next_body < this_body * 0.5) continue;
+
+      if(direction > 0)
+      {
+         if(closes[i] >= opens[i]) continue;          // must be bearish candle
+         if(closes[i-1] <= opens[i-1]) continue;      // impulse must be bullish
+         if(current_close >= lows[i] && current_close <= highs[i])
+            return true;
+      }
+      else
+      {
+         if(closes[i] <= opens[i]) continue;          // must be bullish candle
+         if(closes[i-1] >= opens[i-1]) continue;      // impulse must be bearish
+         if(current_close >= lows[i] && current_close <= highs[i])
+            return true;
+      }
+   }
+   return false;
 }
 
 bool TickVolumeConfirmation()
@@ -1530,6 +1708,8 @@ int Signal(double &atr, string &detail, int &buy_checks, int &sell_checks,
    factor_sell_stochastic = false;
    factor_buy_tickvol = false;
    factor_sell_tickvol = false;
+   factor_buy_sr = false;
+   factor_sell_sr = false;
    
    double fast, slow, fast_previous, trend_fast, trend_slow;
    double rsi, adx, plus_di, minus_di;
@@ -1598,7 +1778,11 @@ int Signal(double &atr, string &detail, int &buy_checks, int &sell_checks,
    
    const bool buy_tickvol = TickVolumeConfirmation();
    const bool sell_tickvol = buy_tickvol;
-   
+
+   // Bonus S&R factor: order block retest (does not count toward 12/12 threshold)
+   const bool buy_sr  = OrderBlockSignal(1);
+   const bool sell_sr = OrderBlockSignal(-1);
+
    factor_buy_h1 = buy_h1;
    factor_sell_h1 = sell_h1;
    factor_buy_h4 = buy_h4;
@@ -1623,6 +1807,8 @@ int Signal(double &atr, string &detail, int &buy_checks, int &sell_checks,
    factor_sell_stochastic = sell_stochastic;
    factor_buy_tickvol = buy_tickvol;
    factor_sell_tickvol = sell_tickvol;
+   factor_buy_sr  = buy_sr;
+   factor_sell_sr = sell_sr;
 
    buy_checks = (int)buy_h1 + (int)buy_h4 + (int)buy_breakout +
                 (int)buy_momentum + (int)buy_strength + (int)buy_volatility +
@@ -1637,11 +1823,33 @@ int Signal(double &atr, string &detail, int &buy_checks, int &sell_checks,
    else if(sell_h1 && sell_h4)
       current_trend = "SELL";
 
+   // Append S&R bonus to detail (does not affect 12/12 threshold)
+   const string sr_suffix = buy_sr ? " | OB BUY" : sell_sr ? " | OB SELL" : "";
    detail = StringFormat("BUY %d/12 | SELL %d/12 | RSI %.1f | ADX %.1f | ATR %.2f",
-                         buy_checks, sell_checks, rsi, adx, atr);
+                         buy_checks, sell_checks, rsi, adx, atr) + sr_suffix;
    if(buy_checks == 12)
       return 1;
    if(sell_checks == 12)
+      return -1;
+   return 0;
+}
+
+int ShadowCandidateDirection(const int buy_checks, const int sell_checks)
+{
+   const bool buy_core =
+      factor_buy_h1 && factor_buy_h4 && factor_buy_momentum &&
+      factor_buy_strength && factor_buy_timeofday && factor_buy_ema_slope &&
+      (factor_buy_breakout || factor_buy_m5_confirm);
+   const bool sell_core =
+      factor_sell_h1 && factor_sell_h4 && factor_sell_momentum &&
+      factor_sell_strength && factor_sell_timeofday && factor_sell_ema_slope &&
+      (factor_sell_breakout || factor_sell_m5_confirm);
+
+   if(buy_core && buy_checks >= InpShadowCandidateChecks &&
+      buy_checks > sell_checks)
+      return 1;
+   if(sell_core && sell_checks >= InpShadowCandidateChecks &&
+      sell_checks > buy_checks)
       return -1;
    return 0;
 }
@@ -1845,7 +2053,7 @@ void UpdateChart()
       mode = "SIGNALS ONLY";
    else if(real_account && !InpConfirmLiveAccount)
       mode = "LIVE LOCKED";
-   Comment("Exness Guard v1.32\n",
+   Comment("Exness Guard v1.40\n",
            active_symbol, " | M30/H1/H4 trend breakout\n",
            "Risk: ", DoubleToString(InpRiskPercent, 2), "% | ", mode, "\n",
            status_text);
@@ -1879,6 +2087,7 @@ int OnInit()
       InpProfitAlertThirdR <= InpProfitAlertSecondR ||
       InpNewsAlertMinutes < 1 || InpNewsPostEventMinutes < 0 ||
       InpShadowReferenceEquity <= 0.0 ||
+      InpShadowCandidateChecks < 9 || InpShadowCandidateChecks > 11 ||
       StringLen(InpJournalFileName) < 6 ||
       StringFind(InpJournalFileName, "..") >= 0 ||
       StringFind(InpJournalFileName, "\\") >= 0 ||
@@ -1918,7 +2127,7 @@ int OnInit()
    }
    trade.SetExpertMagicNumber(InpMagicNumber);
    status_text = "Ready; waiting for a closed 30M candle";
-   JournalActivity("EA_START", "Exness Guard v1.32 initialized in " +
+   JournalActivity("EA_START", "Exness Guard v1.40 initialized in " +
                    DashboardMode());
    EventSetTimer(InpDashboardRefreshSec);
    if(InpExportDashboard)
@@ -2015,6 +2224,13 @@ void OnTimer()
 
 void OnTick()
 {
+   // Belt-and-braces fallback: normally OnTimer exports every two seconds. If
+   // timer delivery is interrupted but ticks still arrive, restore the feed.
+   if(InpExportDashboard &&
+      (last_dashboard_export == 0 ||
+       TimeLocal() - last_dashboard_export > InpDashboardRefreshSec * 2))
+      ExportDashboard();
+
    RefreshPersistentRiskState();
    UpdateShadowTrade();
    const datetime current_bar = iTime(active_symbol, InpSignalTimeframe, 0);
@@ -2034,10 +2250,20 @@ void OnTick()
    const string previous_trend = trend_bias;
    const int direction = Signal(atr, detail, buy_checks, sell_checks,
                                 current_trend);
+   const int shadow_candidate = direction == 0
+      ? ShadowCandidateDirection(buy_checks, sell_checks) : 0;
    signal_buy_checks = buy_checks;
    signal_sell_checks = sell_checks;
+   trend_previous_bias = previous_trend;
+   trend_reversal = previous_trend != "WAIT" && current_trend != "WAIT" &&
+                    current_trend != previous_trend;
    trend_bias = current_trend;
+   trend_exit_warning = TrendExitWarning(buy_checks, sell_checks, current_trend,
+                                         trend_exit_reason, trend_exit_state);
    signal_detail = detail;
+   shadow_candidate_qualified = shadow_candidate != 0;
+   shadow_candidate_side = shadow_candidate > 0 ? "BUY" :
+                           shadow_candidate < 0 ? "SELL" : "NONE";
    JournalActivity("M30_EVALUATION", detail);
    if(InpEnableTrendAlerts && current_trend != "WAIT" &&
       current_trend != previous_trend)
@@ -2053,8 +2279,26 @@ void OnTick()
       {
          const string near_side = buy_checks >= sell_checks ? "BUY" : "SELL";
          QueueAlert("WATCH",
-            StringFormat("%s %s setup forming | %d/12 checks | NO TRADE YET",
-                         active_symbol, near_side, best_checks));
+            StringFormat("%s WATCH | Trend: %s | %s %d/12 | %s",
+                         active_symbol, current_trend, near_side, best_checks, detail));
+      }
+      if(shadow_candidate != 0 && InpEnableShadowTrading && !shadow_open)
+      {
+         string candidate_reason = "";
+         if(ExecutionAllowed(candidate_reason))
+         {
+            JournalActivity("SHADOW_CANDIDATE",
+               StringFormat("%s %d/12 core-qualified | %s",
+                            shadow_candidate > 0 ? "BUY" : "SELL",
+                            shadow_candidate > 0 ? buy_checks : sell_checks,
+                            detail));
+            StartShadowTrade(shadow_candidate, atr);
+         }
+         else
+         {
+            JournalActivity("SHADOW_CANDIDATE_BLOCKED",
+               StringFormat("%s | %s", detail, candidate_reason));
+         }
       }
    }
    else
@@ -2062,12 +2306,22 @@ void OnTick()
       signal_side = direction > 0 ? "BUY" : "SELL";
       status_text = (direction > 0 ? "BUY signal | " : "SELL signal | ") + detail;
       QueueAlert("TRADE",
-         StringFormat("%s %s confirmed | %s",
-                      active_symbol, signal_side, detail));
+         StringFormat("%s TRADE | Trend: %s | %s 12/12 | %s",
+                      active_symbol, current_trend, signal_side, detail));
       if(!InpEnableTrading)
          StartShadowTrade(direction, atr);
       else
          PlaceOrder(direction, atr);
+   }
+   if(trend_exit_warning)
+   {
+      const string warning_message = StringFormat("%s EXIT %s | %s",
+                                                  active_symbol,
+                                                  trend_exit_state,
+                                                  trend_exit_reason);
+      status_text = warning_message;
+      if(trend_exit_state == "NOW")
+         QueueAlert("RISK", warning_message);
    }
    SendQueuedAlerts();
    UpdateChart();

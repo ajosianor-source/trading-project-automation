@@ -1,122 +1,128 @@
-"""
-ExnessGoldGuard WhatsApp Relay Server
-Listens on http://127.0.0.1:8787
-- GET  /health  -> returns {"status":"ok"}
-- POST /alert   -> sends text body as WhatsApp message via wa.me deep link + toast
-"""
+"""Authenticated loopback-only Telegram relay. Disabled unless fully configured."""
 
+import hmac
 import json
-import subprocess
-import sys
-import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import urllib.request
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote
 
 PORT = 8787
-LOG_FILE = r"C:\Users\nexfe\Desktop\Trading\03-Exness-XAUUSD\runtime\relay.log"
-
-# Load phone number from local config (not committed to git)
-_cfg_path = Path(__file__).parent / "config.json"
-try:
-    WHATSAPP_NUMBER = json.loads(_cfg_path.read_text()).get("whatsapp_number", "")
-except Exception:
-    WHATSAPP_NUMBER = ""  # copy config.example.json to config.json and fill in your number
+MAX_BODY_BYTES = 4096
+ROOT = Path(__file__).resolve().parent
+LOG_FILE = ROOT.parent.parent / "runtime" / "relay.log"
+CONFIG_FILE = ROOT / "config.json"
 
 
-def log(msg):
-    from datetime import datetime
-    line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {msg}"
-    print(line, flush=True)
+def load_config() -> dict:
     try:
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-    except Exception:
-        pass
+        config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError) as exc:
+        raise SystemExit("Relay disabled: valid local config.json is required") from exc
+    token = str(config.get("relay_token", ""))
+    if len(token) < 32:
+        raise SystemExit("Relay disabled: relay_token must contain at least 32 characters")
+    if not config.get("telegram_bot_token") or not config.get("telegram_chat_id"):
+        raise SystemExit("Relay disabled: Telegram credentials are incomplete")
+    return config
 
 
-def send_whatsapp(message: str) -> bool:
-    """
-    Send via WhatsApp desktop using wa.me deep link.
-    Falls back to Windows toast notification if number not configured.
-    """
-    if WHATSAPP_NUMBER:
-        url = f"whatsapp://send?phone={WHATSAPP_NUMBER}&text={quote(message)}"
-        try:
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", url],
-                shell=False,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            log(f"SENT via WhatsApp to {WHATSAPP_NUMBER}: {message[:80]}")
-            return True
-        except Exception as e:
-            log(f"ERROR WhatsApp deep link failed: {e}")
+CONFIG = load_config()
+RELAY_TOKEN = str(CONFIG["relay_token"])
+TELEGRAM_TOKEN = str(CONFIG["telegram_bot_token"])
+TELEGRAM_CHAT_ID = str(CONFIG["telegram_chat_id"])
 
-    # Fallback: Windows toast notification
+
+def log(message: str):
+    safe = message.replace("\r", " ").replace("\n", " ")[:500]
+    line = f"{datetime.now(timezone.utc).isoformat()} {safe}"
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with LOG_FILE.open("a", encoding="utf-8") as stream:
+        stream.write(line + "\n")
+
+
+def send_telegram(message: str) -> bool:
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": message}).encode("utf-8")
+    request = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+    )
     try:
-        ps_script = f"""
-        [Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime] | Out-Null
-        [Windows.Data.Xml.Dom.XmlDocument,Windows.Data.Xml.Dom,ContentType=WindowsRuntime] | Out-Null
-        $template = '<toast><visual><binding template="ToastText02"><text id="1">ExnessGoldGuard Alert</text><text id="2">{message[:200].replace('"', "'")}</text></binding></visual></toast>'
-        $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-        $xml.LoadXml($template)
-        $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("ExnessGoldGuard").Show($toast)
-        """
-        subprocess.Popen(
-            [r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_script],
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-        log(f"SENT via Windows toast: {message[:80]}")
-        return True
-    except Exception as e:
-        log(f"ERROR toast failed: {e}")
+        with urllib.request.urlopen(request, timeout=8) as response:
+            result = json.loads(response.read(64_000))
+        return bool(result.get("ok"))
+    except (OSError, ValueError, TypeError):
         return False
 
 
 class RelayHandler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
-        pass  # suppress default access log
+    server_version = "ExnessLocalRelay/1.0"
+    sys_version = ""
 
-    def do_GET(self):
-        if self.path == "/health":
-            self._respond(200, {"status": "ok", "port": PORT})
-        else:
-            self._respond(404, {"error": "not found"})
+    def _authorized(self) -> bool:
+        if self.client_address[0] not in {"127.0.0.1", "::1"}:
+            return False
+        supplied = self.headers.get("Authorization", "")
+        expected = f"Bearer {RELAY_TOKEN}"
+        return hmac.compare_digest(supplied, expected)
 
-    def do_POST(self):
-        if self.path == "/alert":
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length).decode("utf-8", errors="replace").strip()
-            log(f"ALERT received: {body[:120]}")
-            success = send_whatsapp(body)
-            if success:
-                self._respond(200, {"status": "sent"})
-            else:
-                self._respond(500, {"status": "error", "detail": "delivery failed"})
-        else:
-            self._respond(404, {"error": "not found"})
-
-    def _respond(self, code, data):
-        body = json.dumps(data).encode()
+    def _respond(self, code: int, payload: dict):
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         self.send_response(code)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
         self.wfile.write(body)
 
+    def do_GET(self):
+        if self.path != "/health":
+            self._respond(404, {"error": "not found"})
+        elif not self._authorized():
+            self._respond(401, {"error": "unauthorized"})
+        else:
+            self._respond(200, {"status": "ok"})
+
+    def do_POST(self):
+        if self.path != "/alert":
+            self._respond(404, {"error": "not found"})
+            return
+        if not self._authorized():
+            self._respond(401, {"error": "unauthorized"})
+            return
+        if self.headers.get_content_type() != "text/plain":
+            self._respond(415, {"error": "text/plain required"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length < 1 or length > MAX_BODY_BYTES:
+            self._respond(413, {"error": "invalid message size"})
+            return
+        try:
+            message = self.rfile.read(length).decode("utf-8", errors="strict").strip()
+        except UnicodeDecodeError:
+            self._respond(400, {"error": "invalid UTF-8"})
+            return
+        if not message:
+            self._respond(400, {"error": "empty message"})
+            return
+        success = send_telegram(message[:1500])
+        log("alert delivered" if success else "alert delivery failed")
+        self._respond(200 if success else 502, {"status": "sent" if success else "failed"})
+
+    def log_message(self, format, *args):
+        pass
+
 
 if __name__ == "__main__":
-    if not WHATSAPP_NUMBER:
-        log("WARNING: WHATSAPP_NUMBER not set — alerts will use Windows toast notifications only.")
-        log("         Edit relay_server.py and set WHATSAPP_NUMBER to your number (e.g. '601234567890')")
-
-    server = HTTPServer(("127.0.0.1", PORT), RelayHandler)
-    log(f"ExnessGoldGuard WhatsApp Relay started on http://127.0.0.1:{PORT}")
-    log("Endpoints: GET /health  |  POST /alert")
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), RelayHandler)
+    server.daemon_threads = True
+    log("authenticated loopback relay started")
     try:
-        server.serve_forever()
+        server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
-        log("Relay server stopped.")
         server.server_close()

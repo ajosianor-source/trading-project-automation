@@ -71,6 +71,13 @@
         <div class="engine-status">
           <span>EA status</span>
           <strong id="engineStatus">Ready; waiting for a closed 30M candle</strong>
+          <div class="engine-meta">
+            <span>Trend <strong id="trendBias">WAIT</strong></span>
+            <span>BUY <strong id="buyChecks">0/12</strong></span>
+            <span>SELL <strong id="sellChecks">0/12</strong></span>
+          </div>
+          <div class="engine-reversal" id="trendReversal">Trend reversal: WAITING</div>
+          <div class="engine-warning" id="trendExitWarning">Exit warning: NONE</div>
         </div>
         <div class="readiness">
           <div class="readiness-head"><span>Signal factors</span><strong id="nextH1">NEXT 30M --:--</strong></div>
@@ -84,7 +91,7 @@
           <span class="timeframe">M30</span>
         </div>
         <canvas id="chart" aria-label="Recent XAUUSD candlestick chart"></canvas>
-        <div class="chart-legend"><span><i class="up"></i>Bullish</span><span><i class="down"></i>Bearish</span><span>Latest candle may be forming</span></div>
+        <div class="chart-legend"><span><i class="up"></i>Bullish</span><span><i class="down"></i>Bearish</span><span><i class="support"></i>Support</span><span><i class="resistance"></i>Resistance</span><span>Latest candle may be forming</span></div>
       </article>
 
       <article class="panel risk-panel">
@@ -155,6 +162,11 @@
           <div><span>Entry</span><strong id="shadowEntry">--</strong></div>
           <div><span>Stop / target</span><strong id="shadowStops">--</strong></div>
           <div><span>MFE / MAE</span><strong id="shadowExcursion">--</strong></div>
+        </div>
+        <div class="validation-box">
+          <div class="validation-head"><span>Forward validation</span><span id="validationState" class="pill neutral">BUILDING</span></div>
+          <strong id="validationSummary">--</strong>
+          <p id="validationDetail">Shadow-run gates will show here once trades accumulate.</p>
         </div>
         <p class="connect-note">Reference equity: <strong id="shadowReference">$1,000,000.00</strong>. Paper results exclude guaranteed fills and cannot prove future profitability.</p>
       </article>

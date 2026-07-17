@@ -4,6 +4,8 @@ param(
     [string]$RelayBase = 'http://127.0.0.1:8787',
     [int]$StaleSeconds = 20,
     [int]$PollSeconds = 10,
+    [switch]$EnableRelayAlerts,
+    [string]$RelayConfigPath = "$PSScriptRoot\whatsapp-relay\config.json",
     [switch]$Once
 )
 
@@ -42,19 +44,32 @@ function Save-WatchState {
 }
 
 function Test-Relay {
+    if (-not $EnableRelayAlerts) { return 'DISABLED' }
     try {
-        $null = Invoke-RestMethod -Method Get -Uri "$RelayBase/health" -TimeoutSec 3
+        $token = Get-RelayToken
+        $headers = @{ Authorization = "Bearer $token" }
+        $null = Invoke-RestMethod -Method Get -Uri "$RelayBase/health" -Headers $headers -TimeoutSec 3
         return 'HEALTHY'
     } catch {
         return 'DOWN'
     }
 }
 
+function Get-RelayToken {
+    if (-not (Test-Path -LiteralPath $RelayConfigPath)) { throw 'Relay config is missing' }
+    $config = Get-Content -LiteralPath $RelayConfigPath -Raw | ConvertFrom-Json
+    $token = [string]$config.relay_token
+    if ($token.Length -lt 32) { throw 'Relay token is invalid' }
+    return $token
+}
+
 function Send-RelayAlert {
     param([string]$Message)
+    if (-not $EnableRelayAlerts) { return }
     try {
+        $headers = @{ Authorization = "Bearer $(Get-RelayToken)" }
         $null = Invoke-RestMethod -Method Post -Uri "$RelayBase/alert" `
-            -ContentType 'text/plain; charset=utf-8' -Body $Message -TimeoutSec 5
+            -Headers $headers -ContentType 'text/plain; charset=utf-8' -Body $Message -TimeoutSec 5
         Write-WatchLog 'INFO' 'Watchdog alert sent through the WhatsApp relay.'
     } catch {
         Write-WatchLog 'WARN' "Could not send watchdog alert: $($_.Exception.Message)"
@@ -67,7 +82,9 @@ function Get-FeedStatus {
     }
     try {
         $feed = Get-Content -LiteralPath $FeedPath -Raw | ConvertFrom-Json
-        $heartbeat = [DateTimeOffset]::FromUnixTimeSeconds([long]$feed.heartbeat).UtcDateTime
+        # The file timestamp proves that the EA completed an export. It is
+        # immune to broker-clock freezes and terminal DST/timezone differences.
+        $heartbeat = (Get-Item -LiteralPath $FeedPath).LastWriteTimeUtc
         $age = [math]::Max(0, [int]((Get-Date).ToUniversalTime() - $heartbeat).TotalSeconds)
         $status = if ($age -le $StaleSeconds) { 'HEALTHY' } else { 'STALE' }
         return [pscustomobject]@{
@@ -89,15 +106,15 @@ do {
 
     if ($feed.status -ne $previous.feed) {
         if ($feed.status -eq 'HEALTHY' -and $previous.feed -notin @('UNKNOWN', 'HEALTHY')) {
-            if ($relay -eq 'HEALTHY') {
+            if ($EnableRelayAlerts -and $relay -eq 'HEALTHY') {
                 Send-RelayAlert "Exness Gold Guard v1.40 RECOVERY: MT5 live feed is healthy again ($($feed.detail))."
             }
-        } elseif ($feed.status -ne 'HEALTHY' -and $relay -eq 'HEALTHY') {
+        } elseif ($feed.status -ne 'HEALTHY' -and $EnableRelayAlerts -and $relay -eq 'HEALTHY') {
             Send-RelayAlert "Exness Gold Guard v1.40 WARNING: MT5 live feed is $($feed.status) ($($feed.detail)). Check the separate Exness terminal and EA."
         }
     }
 
-    if ($relay -ne $previous.relay -and $relay -eq 'HEALTHY' -and $previous.relay -eq 'DOWN') {
+    if ($EnableRelayAlerts -and $relay -ne $previous.relay -and $relay -eq 'HEALTHY' -and $previous.relay -eq 'DOWN') {
         Write-WatchLog 'INFO' 'WhatsApp relay recovered.'
     }
 
@@ -106,4 +123,3 @@ do {
         Start-Sleep -Seconds ([math]::Max(2, $PollSeconds))
     }
 } while (-not $Once)
-

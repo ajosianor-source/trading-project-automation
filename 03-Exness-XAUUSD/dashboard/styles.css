@@ -148,6 +148,15 @@ button:hover { transform: translateY(-2px); }
 .quote-row strong { display: block; margin-top: 3px; font-family: ui-monospace, monospace; }
 .engine-status { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 .engine-status strong { display: block; margin-top: 4px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.engine-meta { margin-top: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.engine-meta span { padding: 8px; border: 1px solid var(--line); font: 700 10px/1 ui-monospace, monospace; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.engine-meta strong { display: inline; margin: 0 0 0 6px; font: 700 11px/1 ui-monospace, monospace; color: var(--ink); }
+.engine-reversal { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); font: 700 10px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.engine-reversal.reversal-buy { color: var(--green); background: var(--green-soft); border-color: rgba(67,242,154,.2); }
+.engine-reversal.reversal-sell { color: var(--red); background: rgba(255,107,114,.1); border-color: rgba(255,107,114,.2); }
+.engine-warning { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); font: 700 10px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.engine-warning.warn { color: var(--amber); background: rgba(255,190,88,.08); border-color: rgba(255,190,88,.2); }
+.engine-warning.danger { color: var(--red); background: rgba(255,107,114,.1); border-color: rgba(255,107,114,.2); }
 .readiness { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 .readiness-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 9px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
 .readiness-head strong { color: var(--gold); font: 700 10px/1 ui-monospace, monospace; }
@@ -155,12 +164,16 @@ button:hover { transform: translateY(-2px); }
 .factor { padding: 7px 4px; text-align: center; border: 1px solid var(--line); color: var(--muted); font: 700 9px/1 ui-monospace, monospace; }
 .factor.buy { color: var(--green); border-color: rgba(67,242,154,.25); background: var(--green-soft); }
 .factor.sell { color: var(--red); border-color: rgba(255,107,114,.25); background: rgba(255,107,114,.08); }
+.factor.bonus { border-style: dashed; opacity: .85; }
+.factor.bonus::after { content: " ★"; font-size: 8px; }
 
 #chart { display: block; width: 100%; height: 265px; }
 .chart-legend { display: flex; gap: 18px; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
 .chart-legend span { display: flex; align-items: center; gap: 6px; }
 .chart-legend i { width: 8px; height: 8px; border-radius: 2px; background: var(--green); }
 .chart-legend .down { background: var(--red); }
+.chart-legend .support { background: var(--green); box-shadow: 0 0 0 2px rgba(67,242,154,.18); }
+.chart-legend .resistance { background: var(--red); box-shadow: 0 0 0 2px rgba(255,107,114,.18); }
 .timeframe { color: var(--gold); font: 700 11px/1 ui-monospace, monospace; }
 
 .risk-hero { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 22px; }
@@ -206,6 +219,10 @@ button:hover { transform: translateY(-2px); }
 .shadow-note { margin: 12px 0 0; padding: 13px; border: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .shadow-open { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 12px; }
 .execution-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.validation-box { margin-top: 12px; padding: 14px; border: 1px solid var(--line); background: rgba(255,255,255,.018); }
+.validation-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.validation-box strong { display: block; margin-top: 8px; font: 500 18px/1.35 Georgia, serif; }
+.validation-box p { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 
 .alert-layout { display: grid; grid-template-columns: 1.25fr 1fr; gap: 14px; }
 .last-alert { min-height: 132px; padding: 18px; border: 1px solid var(--line); background: rgba(255,255,255,.018); }

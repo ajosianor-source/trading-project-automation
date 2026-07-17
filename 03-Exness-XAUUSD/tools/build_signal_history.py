@@ -13,6 +13,8 @@ from pathlib import Path
 RUNTIME = Path(__file__).parent.parent / "runtime"
 CSV_PATH = RUNTIME / "activity-xauusd.csv"
 OUT_PATH = RUNTIME / "signals-history.json"
+MAX_CSV_BYTES = 25_000_000
+MAX_ROWS = 250_000
 
 
 def parse_shadow_entry(msg: str) -> dict:
@@ -47,6 +49,8 @@ def parse_alert(msg: str) -> dict:
 def build_history() -> dict:
     if not CSV_PATH.exists():
         return {"generated": datetime.now(timezone.utc).isoformat(), "signals": [], "summary": {}}
+    if not CSV_PATH.is_file() or CSV_PATH.stat().st_size > MAX_CSV_BYTES:
+        raise ValueError("Activity journal is missing or exceeds the size limit")
 
     signals = []
     pending = None   # open shadow trade waiting for exit
@@ -54,14 +58,19 @@ def build_history() -> dict:
 
     with open(CSV_PATH, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter=";")
-        for row in reader:
+        for row_number, row in enumerate(reader, start=1):
+            if row_number > MAX_ROWS:
+                raise ValueError("Activity journal exceeds the row limit")
             event = row.get("event", "")
-            msg = row.get("message", "")
-            ts = int(row.get("time_unix", 0))
-            time_str = row.get("time_server", "")
-            symbol = row.get("symbol", "")
-            buy_checks = int(row.get("buy_checks", 0))
-            sell_checks = int(row.get("sell_checks", 0))
+            msg = row.get("message", "")[:2000]
+            try:
+                ts = int(row.get("time_unix", 0))
+                buy_checks = int(row.get("buy_checks", 0))
+                sell_checks = int(row.get("sell_checks", 0))
+            except (TypeError, ValueError):
+                continue
+            time_str = row.get("time_server", "")[:40]
+            symbol = row.get("symbol", "")[:32]
 
             if event == "SHADOW_ENTRY":
                 info = parse_shadow_entry(msg)
@@ -185,7 +194,7 @@ if __name__ == "__main__":
     history = build_history()
     OUT_PATH.write_text(json.dumps(history, indent=2), encoding="utf-8")
     s = history["summary"]
-    print(f"Signal History built → {OUT_PATH}")
+    print(f"Signal History built -> {OUT_PATH}")
     print(f"  Signals : {s['total_signals']} total | {s['closed']} closed | {s['open']} open")
     print(f"  Win rate: {s['win_rate_pct']}% | PF: {s['profit_factor']} | Net R: {s['net_r']}")
     print(f"  Max consec losses: {s['max_consec_losses']} | Max DD: {s['max_drawdown_r']}R")

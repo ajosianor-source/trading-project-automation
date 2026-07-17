@@ -1,11 +1,36 @@
 const $ = selector => document.querySelector(selector);
 
+// Direct file launches cannot securely read private account telemetry across
+// origins. Move them onto the loopback-only dashboard server so auto-connect
+// remains same-origin and the Host/Origin protections stay effective.
+if (window.location.protocol === "file:") {
+  window.location.replace("http://127.0.0.1:3030/");
+}
+
 const state = {
   handle: null,
   timer: null,
   live: false,
   lastData: null
 };
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, character => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+  })[character]);
+}
+
+const LIVE_ENDPOINTS = [
+  "/live.json",
+  "http://localhost:3030/live.json",
+  "http://127.0.0.1:3030/live.json"
+];
+
+const HISTORY_ENDPOINTS = [
+  "/signals-history.json",
+  "http://localhost:3030/signals-history.json",
+  "http://127.0.0.1:3030/signals-history.json"
+];
 
 function demoCandles() {
   const candles = [];
@@ -47,6 +72,7 @@ function demoData() {
       symbol: "XAUUSD", bid: price, ask: price + .19, spreadPoints: 19,
       signal: "WAIT", detail: "RSI 51.8 | ADX 19.6 | ATR 8.42",
       nextBarTime: Math.floor(Date.now() / 1000 / 3600 + 1) * 3600,
+      structure: { support: price - 3.2, resistance: price + 4.8, window: 20 },
       factors: {
         h1: { buy: true, sell: false }, h4: { buy: true, sell: false },
         breakout: { buy: false, sell: false }, momentum: { buy: true, sell: false },
@@ -54,7 +80,8 @@ function demoData() {
         volatility: { buy: true, sell: true }, timeofday: { buy: true, sell: true },
         emaslope: { buy: true, sell: false }, prevstrength: { buy: true, sell: true },
         m5confirm: { buy: false, sell: false }, stochastic: { buy: true, sell: false },
-        tickvol: { buy: true, sell: true }
+        tickvol: { buy: true, sell: true },
+        sr: { buy: true, sell: false }
       }
     },
     risk: {
@@ -69,6 +96,7 @@ function demoData() {
       entry: 0, stop: 0, target: 0, volume: 0, currentR: 0, mfeR: 0, maeR: 0,
       stats: { trades: 0, wins: 0, losses: 0, winRate: 0, netR: 0, estimatedNet: 0, profitFactor: 0, maxDrawdownR: 0 }
     },
+    validation: { shadowTrades: 0, shadowWins: 0, shadowLosses: 0, shadowConsecutiveLosses: 0, shadowWinRate: 0, shadowProfitFactor: 0, shadowDrawdownR: 0, minTradesReached: false, winRateOk: false, profitFactorOk: false, drawdownOk: false, consecLossesOk: false, ready: false },
     execution: { fills: 0, lastSlippagePoints: 0, averageSlippagePoints: 0, maxSlippagePoints: 0 },
     alerts: {
       lastLevel: "NONE", lastMessage: "", lastTime: 0, lastDispatch: 0,
@@ -214,17 +242,57 @@ function renderPosition(position, currency) {
 
 function renderReadiness(market) {
   const factors = market?.factors || {};
+  const activeSignal = String(market?.signal || "WAIT").toUpperCase();
   const labels = [
     ["M30", "h1"], ["H4", "h4"], ["BREAK", "breakout"], ["MOM", "momentum"], ["ADX", "strength"],
     ["VOL%", "volatility"], ["TIME", "timeofday"], ["SLOPE", "emaslope"],
     ["PREV", "prevstrength"], ["M5", "m5confirm"], ["STOCH", "stochastic"], ["TVOL", "tickvol"]
   ];
+  const srFactor = factors["sr"] || {};
+  const srBuy = Boolean(srFactor.buy);
+  const srSell = Boolean(srFactor.sell);
+  const srSide = srBuy ? "buy" : srSell ? "sell" : "";
+  const srBadge = `<div class="factor bonus ${srSide}" title="Order Block retest (bonus - does not count toward 12/12)">OB${srSide ? ` ${srSide.toUpperCase()}` : " -"}</div>`;
   $("#factorList").innerHTML = labels.map(([label, key]) => {
     const value = factors[key] || {};
-    const side = value.buy ? "buy" : value.sell ? "sell" : "";
+    const buy = Boolean(value.buy);
+    const sell = Boolean(value.sell);
+    let side = "";
+    if (activeSignal === "SELL") {
+      side = sell ? "sell" : buy ? "buy" : "";
+    } else if (activeSignal === "BUY") {
+      side = buy ? "buy" : sell ? "sell" : "";
+    } else {
+      side = buy ? "buy" : sell ? "sell" : "";
+    }
     return `<div class="factor ${side}">${label}${side ? ` ${side.toUpperCase()}` : " WAIT"}</div>`;
-  }).join("");
+  }).join("") + srBadge;
   updateCountdown(market?.nextBarTime);
+}
+
+function supportResistanceLevels(candles) {
+  const closed = candles.length > 1 ? candles.slice(0, -1) : candles;
+  const window = closed.slice(-20);
+  if (window.length < 2) return null;
+  const support = Math.min(...window.map(c => Number(c.low)));
+  const resistance = Math.max(...window.map(c => Number(c.high)));
+  if (!Number.isFinite(support) || !Number.isFinite(resistance) || support >= resistance) {
+    return null;
+  }
+  return { support, resistance };
+}
+
+function liveSupportResistance(market, candles) {
+  const structure = market?.structure;
+  if (Number.isFinite(Number(structure?.support)) && Number.isFinite(Number(structure?.resistance))) {
+    return {
+      support: Number(structure.support),
+      resistance: Number(structure.resistance),
+      source: `EA live structure · ${structure.window || ""} bars`
+    };
+  }
+  const fallback = supportResistanceLevels(candles);
+  return fallback ? { ...fallback, source: "Dashboard candle fallback" } : null;
 }
 
 function updateCountdown(nextBarTime) {
@@ -258,6 +326,18 @@ function renderShadow(shadow, currency) {
   setText("#shadowEntry", number(value.entry));
   setText("#shadowStops", `${number(value.stop)} / ${number(value.target)}`);
   setText("#shadowExcursion", `${number(value.mfeR, 2)}R / ${number(value.maeR, 2)}R`);
+}
+
+function renderValidation(validation) {
+  const value = validation || {};
+  const statePill = $("#validationState");
+  if (!statePill) return;
+  statePill.textContent = value.ready ? "GO" : "NO-GO";
+  statePill.className = `pill ${value.ready ? "healthy" : "danger"}`;
+  setText("#validationSummary", `${number(value.shadowWinRate, 1)}% WR · ${number(value.shadowProfitFactor, 2)} PF · ${number(value.shadowDrawdownR, 3)}R DD`);
+  setText("#validationDetail", value.ready
+    ? "Forward validation gates passed on the shadow run."
+    : `Trades ${value.shadowTrades || 0}/50 · Loss streak ${value.shadowConsecutiveLosses || 0}/4 · Win rate ${value.winRateOk ? "OK" : "pending"} · PF ${value.profitFactorOk ? "OK" : "pending"}`);
 }
 
 function renderExecution(execution) {
@@ -308,6 +388,14 @@ function render(data, live = false) {
   setText("#engineStatus", data.engine?.status || "—");
 
   const signal = String(data.market?.signal || "WAIT").toUpperCase();
+  const trend = String(data.market?.trend || "WAIT").toUpperCase();
+  const trendPrevious = String(data.market?.trendPrevious || "WAIT").toUpperCase();
+  const trendReversal = Boolean(data.market?.trendReversal);
+  const trendExitWarning = Boolean(data.market?.trendExitWarning);
+  const trendExitState = String(data.market?.trendExitState || "NONE").toUpperCase();
+  const trendExitReason = String(data.market?.trendExitReason || "");
+  const buyChecks = Number(data.market?.buyChecks ?? 0);
+  const sellChecks = Number(data.market?.sellChecks ?? 0);
   setText("#signalBadge", signal);
   $("#signalBadge").className = `signal-badge ${signal.toLowerCase()}`;
   setText("#symbol", data.market?.symbol || "XAUUSD");
@@ -318,6 +406,32 @@ function render(data, live = false) {
   setText("#bid", number(data.market?.bid));
   setText("#ask", number(data.market?.ask));
   setText("#spread", `${number(data.market?.spreadPoints, 1)} pts`);
+  setText("#trendBias", trend);
+  setText("#buyChecks", `${Number.isFinite(buyChecks) ? buyChecks : 0}/12`);
+  setText("#sellChecks", `${Number.isFinite(sellChecks) ? sellChecks : 0}/12`);
+  const reversalPill = $("#trendReversal");
+  if (reversalPill) {
+    if (trendReversal) {
+      reversalPill.textContent = `TREND REVERSAL: ${trendPrevious} -> ${trend}`;
+      reversalPill.className = `engine-reversal ${trend === "BUY" ? "reversal-buy" : "reversal-sell"}`;
+    } else {
+      reversalPill.textContent = `Trend reversal: ${trendPrevious === "WAIT" || trend === "WAIT" ? "waiting" : "no change"}`;
+      reversalPill.className = "engine-reversal";
+    }
+  }
+  const warningPill = $("#trendExitWarning");
+  if (warningPill) {
+    if (trendExitWarning) {
+      warningPill.textContent = `${trendExitState === "NOW" ? "EXIT NOW" : "EXIT WATCH"}: ${trendExitReason || "close to reversal"}`;
+      warningPill.className = `engine-warning ${trendExitState === "NOW" ? "danger" : "warn"}`;
+    } else {
+      warningPill.textContent = "Exit warning: none";
+      warningPill.className = "engine-warning";
+    }
+  }
+  $("#trendBias").style.color = trend === "BUY" ? "var(--green)" : trend === "SELL" ? "var(--red)" : "var(--muted)";
+  $("#buyChecks").style.color = "var(--green)";
+  $("#sellChecks").style.color = "var(--red)";
   renderReadiness(data.market);
 
   setText("#riskCash", money(data.risk?.riskCash, currency));
@@ -339,6 +453,7 @@ function render(data, live = false) {
 
   renderPosition(data.position, currency);
   renderShadow(data.shadow, currency);
+  renderValidation(data.validation);
   renderExecution(data.execution);
   renderHealth(data, age);
   renderAlerts(data);
@@ -367,6 +482,36 @@ function drawChart(candles) {
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   const y = value => pad.top + (high - value) / range * plotH;
+  const levels = liveSupportResistance(state.lastData?.market, visible);
+
+  function drawLevel(value, label, stroke, fill) {
+    const yy = y(value);
+    if (!Number.isFinite(yy)) return;
+    ctx.save();
+    ctx.strokeStyle = stroke;
+    ctx.fillStyle = fill;
+    ctx.setLineDash([8, 5]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, yy);
+    ctx.lineTo(width - pad.right, yy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = "10px ui-monospace, monospace";
+    const text = `${label} ${value.toFixed(2)}`;
+    const textWidth = ctx.measureText(text).width;
+    const boxW = textWidth + 10;
+    const boxH = 16;
+    const boxX = width - pad.right - boxW - 2;
+    const boxY = yy - boxH / 2;
+    ctx.fillStyle = "rgba(7,16,13,.92)";
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.strokeStyle = stroke;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+    ctx.fillStyle = fill;
+    ctx.fillText(text, boxX + 5, yy + 3);
+    ctx.restore();
+  }
 
   ctx.strokeStyle = "rgba(146,178,161,.10)";
   ctx.lineWidth = 1;
@@ -397,6 +542,11 @@ function drawChart(candles) {
     ctx.stroke();
     ctx.fillRect(x - bodyW / 2, Math.min(open, close), bodyW, Math.max(1, Math.abs(close - open)));
   });
+
+  if (levels) {
+    drawLevel(levels.support, `SUPPORT${levels.source ? "" : ""}`, "rgba(67,242,154,.95)", "#43f29a");
+    drawLevel(levels.resistance, `RESIST${levels.source ? "" : ""}`, "rgba(255,107,114,.95)", "#ff6b72");
+  }
 }
 
 function openDatabase() {
@@ -453,6 +603,20 @@ async function beginLive(handle) {
   state.timer = setInterval(refreshLive, 2000);
 }
 
+async function fetchJsonFrom(urls) {
+  let lastError = null;
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("Unable to fetch JSON");
+}
+
 async function connectLive() {
   try {
     if (!window.showOpenFilePicker) {
@@ -472,9 +636,7 @@ async function connectLive() {
 
 async function fetchLive() {
   try {
-    const response = await fetch("/live.json", { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
+    const data = await fetchJsonFrom(LIVE_ENDPOINTS);
     if (Number(data.schema) < 1 || Number(data.schema) > 2) throw new Error("Unsupported schema");
     state.live = true;
     render(data, true);
@@ -534,9 +696,7 @@ restoreConnection();
 // ── Signal History ────────────────────────────────────────────────────
 async function loadHistory() {
   try {
-    const r = await fetch("/signals-history.json", { cache: "no-store" });
-    if (!r.ok) return;
-    const h = await r.json();
+    const h = await fetchJsonFrom(HISTORY_ENDPOINTS);
     renderHistory(h);
   } catch {
     // not served via HTTP — history requires the local dashboard server
@@ -594,9 +754,9 @@ function renderHistory(h) {
       ? `${sig.buy_checks_at_open}/12 BUY`
       : `${sig.sell_checks_at_open}/12 SELL`;
     return `<tr class="${rowCls}">
-      <td>${sig.id}</td>
-      <td>${sig.open_time_str || "--"}</td>
-      <td>${sig.side}</td>
+      <td>${escapeHtml(sig.id)}</td>
+      <td>${escapeHtml(sig.open_time_str || "--")}</td>
+      <td>${escapeHtml(sig.side)}</td>
       <td>${Number(sig.entry).toFixed(3)}</td>
       <td>${Number(sig.sl).toFixed(3)}</td>
       <td>${Number(sig.tp).toFixed(3)}</td>
@@ -606,7 +766,7 @@ function renderHistory(h) {
       <td>${sig.mfe_r !== null ? `${Number(sig.mfe_r).toFixed(2)}R` : "--"}</td>
       <td>${sig.mae_r !== null ? `${Number(sig.mae_r).toFixed(2)}R` : "--"}</td>
       <td>${sig.duration_hours !== null ? `${sig.duration_hours}h` : "active"}</td>
-      <td>${sig.status}</td>
+      <td>${escapeHtml(sig.status)}</td>
     </tr>`;
   }).join("");
 }
