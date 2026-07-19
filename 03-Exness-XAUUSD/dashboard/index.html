@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Read-only live dashboard for Exness Gold Guard.">
   <title>Exness Gold Guard</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=142-score-tiers-1">
 </head>
 <body>
   <header class="topbar">
@@ -13,9 +13,15 @@
       <span class="brand-mark">EG</span>
       <span>Exness <strong>Gold Guard</strong></span>
     </a>
-    <div class="connection">
-      <span id="connectionDot" class="connection-dot demo"></span>
-      <span id="connectionLabel">DEMO PREVIEW</span>
+    <div class="topbar-actions">
+      <div class="connection">
+        <span id="connectionDot" class="connection-dot demo"></span>
+        <span id="connectionLabel">DEMO PREVIEW</span>
+      </div>
+      <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light mode" aria-pressed="false">
+        <span id="themeIcon" aria-hidden="true">☀</span>
+        <span id="themeLabel">LIGHT</span>
+      </button>
     </div>
   </header>
 
@@ -39,6 +45,12 @@
         <p><strong id="noticeTitle">Preview mode</strong><span id="noticeText">Connect the EA’s live.json file to begin read-only monitoring.</span></p>
       </div>
       <span class="readonly">READ ONLY</span>
+    </section>
+
+    <section id="tradeDirective" class="trade-directive blocked">
+      <div><span id="marketSession">MARKET CLOSED</span><strong id="tradeAction">DO NOT TRADE</strong></div>
+      <p id="tradeReason">Waiting for a live session and a fully validated setup.</p>
+      <div><span>Last closed M30 candle</span><strong id="lastClosedCandle">—</strong></div>
     </section>
 
     <section class="metric-strip">
@@ -91,7 +103,43 @@
           <span class="timeframe">M30</span>
         </div>
         <canvas id="chart" aria-label="Recent XAUUSD candlestick chart"></canvas>
-        <div class="chart-legend"><span><i class="up"></i>Bullish</span><span><i class="down"></i>Bearish</span><span><i class="support"></i>Support</span><span><i class="resistance"></i>Resistance</span><span>Latest candle may be forming</span></div>
+        <div class="chart-legend"><span><i class="up"></i>Bullish</span><span><i class="down"></i>Bearish</span><span><i class="support"></i>Support</span><span><i class="resistance"></i>Resistance</span><span><i class="ob-zone"></i>Validated OB</span><span><i class="fvg-zone"></i>FVG</span></div>
+      </article>
+
+      <article class="panel ob-panel">
+        <div class="panel-head">
+          <div><p class="label">V1.42 MIXED-SCORE GATE</p><h2>9–12/12 + MSS/FVG Order Block</h2></div>
+          <span id="obState" class="pill neutral">NONE</span>
+        </div>
+        <div id="structureDirective" class="structure-directive blocked">DO NOT TRADE</div>
+        <div class="ob-flow">
+          <div><span>Market structure shift</span><strong id="mssSide">NONE</strong><small id="mssDetail">Waiting for a fractal-3 close break</small></div>
+          <div><span>Immediate fair value gap</span><strong id="fvgSide">NONE</strong><small id="fvgDetail">Must complete within three candles</small></div>
+          <div><span>Validated Order Block</span><strong id="obSide">NONE</strong><small id="obDetail">No active zone</small></div>
+        </div>
+        <div class="ob-levels">
+          <div><span>Zone</span><strong id="obZone">—</strong></div>
+          <div><span>Limit entry</span><strong id="obEntry">—</strong></div>
+          <div><span>Stop loss</span><strong id="obStop">—</strong></div>
+          <div><span>3R target</span><strong id="obTarget">—</strong></div>
+          <div><span>Order</span><strong id="obOrder">NONE</strong></div>
+        </div>
+        <div class="lifecycle">
+          <span>ORDER BLOCK LIFECYCLE</span>
+          <div id="obLifecycle"><em>No lifecycle events yet</em></div>
+        </div>
+      </article>
+
+      <article class="panel news-panel">
+        <div class="panel-head">
+          <div><p class="label">USD EVENT RISK</p><h2>News guard</h2></div>
+          <span id="newsState" class="pill neutral">WAITING</span>
+        </div>
+        <div class="news-body">
+          <strong id="newsEvent">Checking the MT5 economic calendar</strong>
+          <span id="newsCountdown">High-impact USD events</span>
+        </div>
+        <p class="connect-note">New entries are blocked 30 minutes before and 15 minutes after high-impact USD events. Existing positions are not automatically closed.</p>
       </article>
 
       <article class="panel risk-panel">
@@ -132,6 +180,10 @@
             <div><span>Take profit</span><strong id="positionTarget">—</strong></div>
           </div>
           <div id="protectionState" class="protection">SL + TP VERIFIED</div>
+        </div>
+        <div class="account-exposure">
+          <div><span>ALL MT5 POSITIONS</span><strong id="accountPositionCount">0 open</strong></div>
+          <div id="accountPositions"><em>No account-wide exposure</em></div>
         </div>
       </article>
 
@@ -204,18 +256,6 @@
         </div>
       </article>
 
-      <article class="panel news-panel">
-        <div class="panel-head">
-          <div><p class="label">USD EVENT RISK</p><h2>News guard</h2></div>
-          <span id="newsState" class="pill neutral">WAITING</span>
-        </div>
-        <div class="news-body">
-          <strong id="newsEvent">Checking the MT5 economic calendar</strong>
-          <span id="newsCountdown">High-impact USD events</span>
-        </div>
-        <p class="connect-note">New entries are blocked 30 minutes before and 15 minutes after high-impact USD events. Existing positions are not automatically closed.</p>
-      </article>
-
       <article class="panel connect-panel">
         <div class="panel-head">
           <div><p class="label">FIRST CONNECTION</p><h2>Connect the feed</h2></div>
@@ -232,7 +272,11 @@
       <article class="panel history-panel" style="grid-column:1/-1">
         <div class="panel-head">
           <div><p class="label">VALIDATION LOG</p><h2>Signal history</h2></div>
-          <span id="historyState" class="pill neutral">LOADING</span>
+          <div class="history-actions">
+            <button id="downloadTrades" class="secondary compact" type="button">Download trades CSV</button>
+            <button id="downloadWeekly" class="secondary compact" type="button">Download weekly summary</button>
+            <span id="historyState" class="pill neutral">LOADING</span>
+          </div>
         </div>
         <div class="history-summary" id="historySummary">
           <div><span>Signals</span><strong id="hTotal">0</strong></div>
@@ -243,6 +287,12 @@
           <div><span>Max drawdown R</span><strong id="hDD">--</strong></div>
         </div>
         <div class="history-gates" id="historyGates"></div>
+        <div class="score-tiers" id="scoreTiers">
+          <div><span>9/12</span><strong>0 trades</strong><small>Collecting</small></div>
+          <div><span>10/12</span><strong>0 trades</strong><small>Collecting</small></div>
+          <div><span>11/12</span><strong>0 trades</strong><small>Collecting</small></div>
+          <div><span>12/12</span><strong>0 trades</strong><small>Collecting</small></div>
+        </div>
         <div class="history-table-wrap">
           <table id="historyTable">
             <thead>
@@ -271,7 +321,7 @@
     </section>
   </main>
 
-  <footer><span>Exness Guard v1.32</span><span>Monitoring does not guarantee execution or profitability.</span></footer>
-  <script src="app.js"></script>
+  <footer><span>Exness Guard v1.42 research</span><span>Monitoring does not guarantee execution or profitability.</span></footer>
+  <script src="app.js?v=142-score-tiers-1"></script>
 </body>
 </html>

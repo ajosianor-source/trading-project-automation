@@ -2,13 +2,13 @@
 setlocal
 cd /d "%~dp0"
 
-where py.exe >nul 2>&1
+py.exe -3 --version >nul 2>&1
 if not errorlevel 1 (
   py.exe -3 "%~dp0tools\dashboard_server.py"
   exit /b %errorlevel%
 )
 
-where python.exe >nul 2>&1
+python.exe --version >nul 2>&1
 if not errorlevel 1 (
   python.exe "%~dp0tools\dashboard_server.py"
   exit /b %errorlevel%

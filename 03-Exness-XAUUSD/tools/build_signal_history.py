@@ -20,11 +20,14 @@ MAX_ROWS = 250_000
 def parse_shadow_entry(msg: str) -> dict:
     """Parse: 'XAUUSDm virtual BUY 0.02 lots | entry 4120.000 | SL 4107.600 | TP 4144.800 | risk 24.80'"""
     m = re.search(
-        r"virtual (?P<side>BUY|SELL) (?P<vol>[\d.]+) lots \| entry (?P<entry>[\d.]+) "
+        r"virtual (?P<side>BUY|SELL) (?:OPEN )?(?P<vol>[\d.]+) lots \| entry (?P<entry>[\d.]+) "
         r"\| SL (?P<sl>[\d.]+) \| TP (?P<tp>[\d.]+) \| risk (?P<risk>[\d.]+)", msg)
     if not m:
         return {}
-    return {k: float(v) if k != "side" else v for k, v in m.groupdict().items()}
+    result = {k: float(v) if k != "side" else v for k, v in m.groupdict().items()}
+    score = re.search(r"\| score (?P<score>9|10|11|12)/12", msg)
+    result["signal_score"] = int(score.group("score")) if score else None
+    return result
 
 
 def parse_shadow_exit(msg: str) -> dict:
@@ -88,6 +91,9 @@ def build_history() -> dict:
                         "volume": info.get("vol", 0),
                         "buy_checks_at_open": buy_checks,
                         "sell_checks_at_open": sell_checks,
+                        "signal_score": info.get("signal_score") or (
+                            buy_checks if info.get("side") == "BUY" else sell_checks
+                        ),
                         "status": "OPEN",
                         "outcome": None,
                         "close_time": None,
@@ -161,6 +167,22 @@ def build_history() -> dict:
         if dd > max_dd_r:
             max_dd_r = dd
 
+    tier_summary = {}
+    for score in range(9, 13):
+        tier = [s for s in closed if s.get("signal_score") == score]
+        tier_wins = [s for s in tier if (s.get("result_r") or 0) > 0]
+        gross_win = sum(max(0, s.get("result_r") or 0) for s in tier)
+        gross_loss = abs(sum(min(0, s.get("result_r") or 0) for s in tier))
+        tier_summary[str(score)] = {
+            "closed": len(tier),
+            "wins": len(tier_wins),
+            "win_rate_pct": round(len(tier_wins) / len(tier) * 100, 2) if tier else 0,
+            "profit_factor": round(gross_win / gross_loss, 3) if gross_loss else (
+                999.0 if gross_win else 0.0
+            ),
+            "net_r": round(sum(s.get("result_r") or 0 for s in tier), 3),
+        }
+
     summary = {
         "total_signals": len(signals),
         "closed": len(closed),
@@ -172,6 +194,7 @@ def build_history() -> dict:
         "net_r": round(net_r, 3),
         "max_consec_losses": max_consec_loss,
         "max_drawdown_r": round(max_dd_r, 3),
+        "score_tiers": tier_summary,
         "total_alerts": len(alert_log),
         "validation": {
             "win_rate_ok": win_rate >= 55,

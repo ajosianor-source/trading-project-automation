@@ -20,10 +20,22 @@ if (-not $exnessRunning) {
 }
 
 function Find-Python {
-    $commands = @('py.exe', 'python.exe', 'python3.exe')
-    foreach ($name in $commands) {
-        $command = Get-Command $name -ErrorAction SilentlyContinue
-        if ($command) { return $command.Source }
+    $candidates = @(
+        @{ Name = 'py.exe'; Arguments = @('-3') },
+        @{ Name = 'python.exe'; Arguments = @() },
+        @{ Name = 'python3.exe'; Arguments = @() }
+    )
+    foreach ($candidate in $candidates) {
+        $command = Get-Command $candidate.Name -ErrorAction SilentlyContinue
+        if (-not $command) { continue }
+
+        & $command.Source @($candidate.Arguments) --version *> $null
+        if ($LASTEXITCODE -eq 0) {
+            return @{
+                Path = $command.Source
+                Arguments = $candidate.Arguments
+            }
+        }
     }
     throw 'Python 3 was not found in PATH.'
 }
@@ -31,12 +43,8 @@ function Find-Python {
 $dashboardListening = Get-NetTCPConnection -LocalPort 3030 -State Listen -ErrorAction SilentlyContinue
 if (-not $dashboardListening) {
     $python = Find-Python
-    $arguments = if ([IO.Path]::GetFileName($python) -ieq 'py.exe') {
-        @('-3', $dashboardScript)
-    } else {
-        @($dashboardScript)
-    }
-    Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $projectRoot -WindowStyle Hidden
+    $arguments = @($python.Arguments) + @($dashboardScript)
+    Start-Process -FilePath $python.Path -ArgumentList $arguments -WorkingDirectory $projectRoot -WindowStyle Hidden
     Write-Host 'Dashboard server started at http://localhost:3030'
 } else {
     Write-Host 'Dashboard server is already listening at http://localhost:3030'

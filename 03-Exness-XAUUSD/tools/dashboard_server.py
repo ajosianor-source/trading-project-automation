@@ -65,6 +65,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         return self.client_address[0] in {"127.0.0.1", "::1"}
 
     def end_headers(self):
+        # Dashboard assets and the HTML shell must update as one version. A
+        # cached stylesheet paired with newer HTML can collapse the CSS grid.
+        self.send_header("Cache-Control", "no-store, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -84,7 +89,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
@@ -97,7 +101,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             if path == "/live.json":
                 feed_path = resolve_live_feed()
                 payload = json.loads(feed_path.read_text(encoding="utf-8"))
-                if not isinstance(payload, dict) or payload.get("schema") not in (1, 2):
+                if not isinstance(payload, dict) or payload.get("schema") not in (1, 2, 3):
                     raise ValueError("Invalid dashboard schema")
                 payload["eaHeartbeat"] = payload.get("heartbeat")
                 payload["heartbeat"] = int(feed_path.stat().st_mtime)

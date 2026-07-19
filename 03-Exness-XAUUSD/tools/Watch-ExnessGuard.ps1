@@ -107,10 +107,10 @@ do {
     if ($feed.status -ne $previous.feed) {
         if ($feed.status -eq 'HEALTHY' -and $previous.feed -notin @('UNKNOWN', 'HEALTHY')) {
             if ($EnableRelayAlerts -and $relay -eq 'HEALTHY') {
-                Send-RelayAlert "Exness Gold Guard v1.40 RECOVERY: MT5 live feed is healthy again ($($feed.detail))."
+                Send-RelayAlert "Exness Gold Guard v1.41 RECOVERY: MT5 live feed is healthy again ($($feed.detail))."
             }
         } elseif ($feed.status -ne 'HEALTHY' -and $EnableRelayAlerts -and $relay -eq 'HEALTHY') {
-            Send-RelayAlert "Exness Gold Guard v1.40 WARNING: MT5 live feed is $($feed.status) ($($feed.detail)). Check the separate Exness terminal and EA."
+            Send-RelayAlert "Exness Gold Guard v1.41 WARNING: MT5 live feed is $($feed.status) ($($feed.detail)). Check the separate Exness terminal and EA."
         }
     }
 

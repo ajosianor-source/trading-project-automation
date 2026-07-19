@@ -3,9 +3,38 @@
 An independent MetaTrader 5 Expert Advisor for Exness XAUUSD and BTCUSD. It is
 separate from projects `01` and `02`.
 
-Current build: **v1.40**. See `docs/VALIDATION.md` before enabling any live
+Current build: **v1.42 research**. See `docs/VALIDATION.md` before enabling any live
 execution. The current decision is signals-only forward observation: XAUUSDm
 is the stronger candidate, while BTCUSDm remains borderline.
+
+The hardened v1.41 dashboard/feed also includes an account-wide margin defence
+lock (default minimum margin level 150%), all-account position visibility,
+market-session and stale-candle status, confirmed-fractal non-repainting
+support/resistance, MSS/OB/FVG chart markers, an Order Block lifecycle trace,
+plain-language trade directives, and downloadable forward/weekly CSV reports.
+These monitoring additions do not relax the original validation gates.
+
+Version 1.42 preserves the complete v1.40 12-factor engine and v1.41 strict
+MSS/FVG-validated Order Block gate. A valid setup requires a close through a
+confirmed fractal-3 swing, the last opposite-colour candle before that shift,
+and a matching three-candle FVG completed within three candles of the Order
+Block. Entries are pending limits at the exact body boundary, stops are two
+broker ticks beyond the wick, and targets are fixed at 3R. Set
+`InpRequireValidatedOB=false` only to reproduce the legacy v1.40 execution
+path; do not mix both modes inside one validation window.
+
+The v1.42 research population accepts scores from 9/12 through 12/12 when the
+core directional conditions also pass. `InpMinimumExecutionChecks=9` controls
+the floor. Every pending order, fill, shadow result, dashboard row and CSV
+export retains its original score tier so 9/12, 10/12, 11/12 and 12/12
+performance can be compared without hindsight reclassification. v1.41 results
+must not be pooled with this population.
+
+The MT5 chart includes a guarded manual-limit button when
+`InpShowManualTradeButton=true`. With `InpManualExecutionOnly=true`, qualified
+signals are never auto-submitted: the operator must click ARM and then CONFIRM
+within ten seconds. The button uses the same live-account confirmation, margin,
+news, exposure, stale-price and validated-OB locks as automated execution.
 
 ## What it does
 
@@ -137,7 +166,9 @@ Open the dashboard through `tools/dashboard_server.py` at
 `dashboard/index.html` directly still works, but it may rely on browser file
 permissions for live refreshes.
 
-When the EA is attached, it updates this read-only file every two seconds:
+When the EA is attached, it updates this read-only file every two seconds.
+Schema 3 adds MSS, FVG, validated Order Block, pending-limit and exact
+entry/stop/target telemetry:
 
 Gold:
 `%APPDATA%\MetaQuotes\Terminal\Common\Files\ExnessGoldGuard\live.json`
@@ -182,7 +213,7 @@ locks. Version 1.32 remains the public build label for this upgrade.
 2. Copy `mt5/ExnessGoldGuard.mq5` into `MQL5/Experts`.
 3. Open it in MetaEditor and press **F7**.
 4. In MT5, refresh **Navigator > Expert Advisors**.
-5. Open the Exness XAUUSD or BTCUSD H1 chart and attach **ExnessGoldGuard**.
+5. Open the Exness XAUUSD or BTCUSD M30 chart and attach **ExnessGoldGuard**.
 6. Load the matching gold or bitcoin `.set` file.
 
 The EA starts in signals-only mode:

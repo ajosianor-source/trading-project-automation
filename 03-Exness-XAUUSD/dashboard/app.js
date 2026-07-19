@@ -11,8 +11,59 @@ const state = {
   handle: null,
   timer: null,
   live: false,
-  lastData: null
+  lastData: null,
+  history: null
 };
+
+function preferredTheme() {
+  try {
+    const saved = localStorage.getItem("exness-guard-theme");
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {
+    // Theme persistence is optional.
+  }
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function applyTheme(theme, persist = false) {
+  const resolved = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = resolved;
+  const isLight = resolved === "light";
+  const button = $("#themeToggle");
+  if (button) {
+    button.setAttribute("aria-pressed", String(isLight));
+    button.setAttribute("aria-label", `Switch to ${isLight ? "dark" : "light"} mode`);
+  }
+  setText("#themeIcon", isLight ? "☾" : "☀");
+  setText("#themeLabel", isLight ? "DARK" : "LIGHT");
+  if (persist) {
+    try {
+      localStorage.setItem("exness-guard-theme", resolved);
+    } catch {
+      // Continue when storage is unavailable.
+    }
+  }
+  if (state.lastData) drawChart(state.lastData.candles || []);
+}
+
+applyTheme(preferredTheme());
+
+$("#themeToggle")?.addEventListener("click", () => {
+  const current = document.documentElement.dataset.theme || "dark";
+  applyTheme(current === "dark" ? "light" : "dark", true);
+});
+
+if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+  let pointerFrame = 0;
+  window.addEventListener("pointermove", event => {
+    if (pointerFrame) cancelAnimationFrame(pointerFrame);
+    pointerFrame = requestAnimationFrame(() => {
+      document.documentElement.style.setProperty("--mouse-x", `${event.clientX}px`);
+      document.documentElement.style.setProperty("--mouse-y", `${event.clientY}px`);
+      pointerFrame = 0;
+    });
+  }, { passive: true });
+}
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, character => ({
@@ -56,7 +107,7 @@ function demoData() {
   const candles = demoCandles();
   const price = candles.at(-1).close;
   return {
-    schema: 2,
+    schema: 3,
     heartbeat: Math.floor(Date.now() / 1000),
     terminal: { connected: true, algoTrading: false },
     account: {
@@ -64,7 +115,7 @@ function demoData() {
       balance: 1000000, equity: 1000000, freeMargin: 1000000, marginLevel: 0
     },
     engine: {
-      version: "1.32", mode: "SIGNALS ONLY",
+      version: "1.41", mode: "SIGNALS ONLY",
       status: "Preview data — connect MT5 for live status",
       emergencyStop: false, exnessVerified: true
     },
@@ -73,6 +124,15 @@ function demoData() {
       signal: "WAIT", detail: "RSI 51.8 | ADX 19.6 | ATR 8.42",
       nextBarTime: Math.floor(Date.now() / 1000 / 3600 + 1) * 3600,
       structure: { support: price - 3.2, resistance: price + 4.8, window: 20 },
+      orderBlock: {
+        required: true, state: "VALID", valid: true, side: "BUY",
+        time: candles.at(-8).time, createdTime: candles.at(-3).time,
+        expiryTime: candles.at(-3).time + 12 * 1800,
+        low: price - 2.7, high: price - 1.5, entry: price - 1.7,
+        stop: price - 2.72, target: price + 1.36, pending: true,
+        mss: { side: "BUY", time: candles.at(-3).time, swingPrice: price - .4 },
+        fvg: { side: "BUY", time: candles.at(-5).time, low: price - 1.1, high: price - .7 }
+      },
       factors: {
         h1: { buy: true, sell: false }, h4: { buy: true, sell: false },
         breakout: { buy: false, sell: false }, momentum: { buy: true, sell: false },
@@ -92,7 +152,7 @@ function demoData() {
     },
     position: { open: false },
     shadow: {
-      enabled: true, referenceEquity: 1000000, open: false, side: "FLAT",
+      enabled: true, referenceEquity: 1000000, pending: false, open: false, side: "FLAT",
       entry: 0, stop: 0, target: 0, volume: 0, currentR: 0, mfeR: 0, maeR: 0,
       stats: { trades: 0, wins: 0, losses: 0, winRate: 0, netR: 0, estimatedNet: 0, profitFactor: 0, maxDrawdownR: 0 }
     },
@@ -142,6 +202,8 @@ function ratioBar(selector, value, limit) {
 
 function renderHealth(data, age) {
   const positionProtected = !data.position?.open || data.position.protected;
+  const freeMargin = Number(data.account?.freeMargin || 0);
+  const marginLevel = Number(data.account?.marginLevel || 0);
   const checks = [
     ["MT5 terminal", data.terminal?.connected, data.terminal?.connected ? "CONNECTED" : "OFFLINE"],
     ["Feed heartbeat", age <= 10, age <= 10 ? `${age}s AGO` : `${age}s STALE`],
@@ -149,6 +211,11 @@ function renderHealth(data, age) {
     ["Algo Trading", data.terminal?.algoTrading, data.terminal?.algoTrading ? "ENABLED" : "DISABLED"],
     ["Emergency stop", !data.engine?.emergencyStop, data.engine?.emergencyStop ? "ACTIVE" : "CLEAR"],
     ["Position protection", positionProtected, positionProtected ? "VERIFIED" : "MISSING"],
+    ["Free margin", freeMargin >= 0, freeMargin >= 0 ? money(freeMargin, data.account?.currency || "USD") : `${money(freeMargin, data.account?.currency || "USD")} NEGATIVE`],
+    ["Margin defence", !data.risk?.marginDefence?.locked,
+      data.risk?.marginDefence?.locked ? data.risk.marginDefence.reason : "CLEAR"],
+    ["Margin level", marginLevel === 0 || marginLevel >= Number(data.risk?.marginDefence?.minimumMarginLevel || 150),
+      marginLevel === 0 ? "NO MARGIN" : `${number(marginLevel, 1)}%`],
     ["USD news window", !data.news?.blocked, data.news?.blocked ? "ENTRIES BLOCKED" : (data.news?.status || "CLEAR")]
   ];
   const failed = checks.filter(([, ok]) => !ok).length;
@@ -158,6 +225,89 @@ function renderHealth(data, age) {
   $("#healthList").innerHTML = checks.map(([label, ok, value]) =>
     `<div class="health-row"><span>${label}</span><strong class="${ok ? "ok" : "bad"}">${value}</strong></div>`
   ).join("");
+}
+
+function renderOrderBlock(market) {
+  const ob = market?.orderBlock || {};
+  const mss = ob.mss || {};
+  const fvg = ob.fvg || {};
+  const statePill = $("#obState");
+  const valid = Boolean(ob.valid);
+  const side = String(ob.side || "NONE").toUpperCase();
+  statePill.textContent = ob.state || "NONE";
+  statePill.className = `pill ${valid ? (side === "BUY" ? "healthy" : "danger") : "neutral"}`;
+
+  setText("#mssSide", mss.side || "NONE");
+  setText("#mssDetail", Number(mss.time)
+    ? `${new Date(Number(mss.time) * 1000).toLocaleString()} · swing ${number(mss.swingPrice)}`
+    : "Waiting for a fractal-3 close break");
+  setText("#fvgSide", fvg.side || "NONE");
+  setText("#fvgDetail", Number(fvg.time)
+    ? `${number(fvg.low)}–${number(fvg.high)} · ${new Date(Number(fvg.time) * 1000).toLocaleString()}`
+    : "Must complete within three candles");
+  setText("#obSide", side);
+  setText("#obDetail", Number(ob.time)
+    ? `${new Date(Number(ob.time) * 1000).toLocaleString()} · ${ob.required ? "required gate" : "bonus mode"}`
+    : "No active zone");
+  setText("#obZone", valid ? `${number(ob.low)}–${number(ob.high)}` : "—");
+  setText("#obEntry", valid ? number(ob.entry) : "—");
+  setText("#obStop", valid ? number(ob.stop) : "—");
+  setText("#obTarget", valid ? number(ob.target) : "—");
+  setText("#obOrder", ob.pending ? "LIMIT PENDING" : ob.state || "NONE");
+  const lifecycle = Array.isArray(ob.lifecycle) ? ob.lifecycle : [];
+  $("#obLifecycle").innerHTML = lifecycle.length
+    ? lifecycle.map(item => `<b>${escapeHtml(item.event)} · ${new Date(Number(item.time) * 1000).toLocaleTimeString()}</b>`).join("")
+    : "<em>No lifecycle events yet</em>";
+  const directive = $("#structureDirective");
+  const developing = Boolean(Number(mss.time)) && !valid;
+  directive.textContent = ob.pending || valid ? "LIMIT READY" : developing ? "SETUP DEVELOPING" : "DO NOT TRADE";
+  directive.className = `structure-directive ${ob.pending || valid ? "ready" : developing ? "developing" : "blocked"}`;
+
+  ["#mssSide", "#fvgSide", "#obSide"].forEach(selector => {
+    const node = $(selector);
+    const value = String(node.textContent || "").toUpperCase();
+    node.style.color = value === "BUY" ? "var(--green)" :
+      value === "SELL" ? "var(--red)" : "var(--muted)";
+  });
+}
+
+function renderTradeDirective(data) {
+  const market = data.market || {};
+  const sessionOpen = Boolean(market.session?.open);
+  const stale = Boolean(market.candleStale);
+  const marginLocked = Boolean(data.risk?.marginDefence?.locked);
+  const ob = market.orderBlock || {};
+  const ready = sessionOpen && !stale && !marginLocked && !data.news?.blocked &&
+    Boolean(ob.valid) && (Boolean(ob.pending) || ["BUY", "SELL"].includes(String(market.signal || "").toUpperCase()));
+  const developing = sessionOpen && !stale && !marginLocked &&
+    (Number(ob.mss?.time) > 0 || Number(market.buyChecks) >= 8 || Number(market.sellChecks) >= 8);
+  let action = ready ? "LIMIT READY" : developing ? "SETUP DEVELOPING" : "DO NOT TRADE";
+  let reason = ready
+    ? `Validated ${ob.side || ""} Order Block. Use only the displayed limit, SL and 3R target.`
+    : marginLocked ? (data.risk.marginDefence.reason || "Account-wide margin defence is active.")
+      : !sessionOpen ? "Market is closed or the broker tick is stale."
+        : stale ? "The last completed M30 candle is stale."
+          : data.news?.blocked ? "High-impact USD news window blocks new entries."
+            : "Wait for MSS, immediate FVG, validated Order Block and aligned factors.";
+  setText("#marketSession", market.session?.state || (sessionOpen ? "MARKET OPEN" : "MARKET CLOSED"));
+  setText("#tradeAction", action);
+  setText("#tradeReason", reason);
+  setText("#lastClosedCandle", Number(market.lastClosedBarTime)
+    ? `${new Date(Number(market.lastClosedBarTime) * 1000).toLocaleString()}${stale ? " · STALE" : ""}`
+    : "Unavailable");
+  $("#tradeDirective").className = `trade-directive ${ready ? "ready" : developing ? "developing" : "blocked"}`;
+}
+
+function renderAccountPositions(account, currency) {
+  const positions = Array.isArray(account?.positions) ? account.positions : [];
+  setText("#accountPositionCount", `${positions.length} open`);
+  $("#accountPositions").innerHTML = positions.length
+    ? positions.map(p => `<div class="exposure-row ${p.guardManaged ? "" : "external"}">
+        <span>${escapeHtml(p.symbol)} · ${escapeHtml(p.side)} ${number(p.volume, 2)} lots${p.guardManaged ? " · GUARD" : " · EXTERNAL"}</span>
+        <strong>${money(p.profit, currency)}</strong>
+        <span>${Number(p.stop) > 0 && Number(p.target) > 0 ? "SL/TP" : "UNPROTECTED"}</span>
+      </div>`).join("")
+    : "<em>No account-wide exposure</em>";
 }
 
 function channelClass(status) {
@@ -252,7 +402,9 @@ function renderReadiness(market) {
   const srBuy = Boolean(srFactor.buy);
   const srSell = Boolean(srFactor.sell);
   const srSide = srBuy ? "buy" : srSell ? "sell" : "";
-  const srBadge = `<div class="factor bonus ${srSide}" title="Order Block retest (bonus - does not count toward 12/12)">OB${srSide ? ` ${srSide.toUpperCase()}` : " -"}</div>`;
+  const strictOB = Boolean(market?.orderBlock?.required);
+  const minimum = Number(market?.minimumExecutionChecks || 12);
+  const srBadge = `<div class="factor bonus ${srSide}" title="${strictOB ? `MSS/FVG validated Order Block gate · minimum ${minimum}/12` : "Legacy v1.40 Order Block retest bonus"}">${strictOB ? "VOB" : "OB"}${srSide ? ` ${srSide.toUpperCase()}` : " -"}</div>`;
   $("#factorList").innerHTML = labels.map(([label, key]) => {
     const value = factors[key] || {};
     const buy = Boolean(value.buy);
@@ -306,9 +458,10 @@ function renderShadow(shadow, currency) {
   const value = shadow || {};
   const stats = value.stats || {};
   const open = Boolean(value.open);
+  const pending = Boolean(value.pending);
   const statePill = $("#shadowState");
-  statePill.textContent = !value.enabled ? "DISABLED" : open ? `${value.side || "OPEN"} PAPER` : "FLAT";
-  statePill.className = `pill ${open ? (value.side === "SELL" ? "danger" : "healthy") : "neutral"}`;
+  statePill.textContent = !value.enabled ? "DISABLED" : pending ? `${value.side || "OB"} LIMIT` : open ? `${value.side || "OPEN"} PAPER` : "FLAT";
+  statePill.className = `pill ${open || pending ? (value.side === "SELL" ? "danger" : "healthy") : "neutral"}`;
   setText("#shadowTrades", stats.trades ?? 0);
   setText("#shadowWinRate", Number(stats.trades) ? `${number(stats.winRate, 1)}%` : "--");
   setText("#shadowProfitFactor", Number(stats.trades) ? number(stats.profitFactor, 2) : "--");
@@ -446,23 +599,32 @@ function render(data, live = false) {
   setText("#drawdownText", `${number(drawdown, 3)}% / ${number(drawdownLimit, 3)}%`);
   const dailyRatio = ratioBar("#dailyLossBar", daily, dailyLimit);
   const drawdownRatio = ratioBar("#drawdownBar", drawdown, drawdownLimit);
-  const riskDanger = dailyRatio >= 100 || drawdownRatio >= 100;
+  const riskDanger = dailyRatio >= 100 || drawdownRatio >= 100 || Boolean(data.risk?.marginDefence?.locked);
   const riskState = $("#riskState");
   riskState.textContent = riskDanger ? "LIMIT REACHED" : dailyRatio >= 70 || drawdownRatio >= 70 ? "WATCH" : "HEALTHY";
   riskState.className = `pill ${riskDanger ? "danger" : dailyRatio >= 70 || drawdownRatio >= 70 ? "locked" : "healthy"}`;
 
   renderPosition(data.position, currency);
+  renderAccountPositions(data.account, currency);
+  renderTradeDirective(data);
   renderShadow(data.shadow, currency);
   renderValidation(data.validation);
   renderExecution(data.execution);
   renderHealth(data, age);
   renderAlerts(data);
   renderNews(data);
+  renderOrderBlock(data.market);
   drawChart(data.candles || []);
 }
 
 function drawChart(candles) {
   const canvas = $("#chart");
+  const themeStyles = getComputedStyle(document.documentElement);
+  const themeGreen = themeStyles.getPropertyValue("--green").trim() || "#43f29a";
+  const themeRed = themeStyles.getPropertyValue("--red").trim() || "#ff6b72";
+  const themeGold = themeStyles.getPropertyValue("--gold").trim() || "#e7bd6a";
+  const themeMuted = themeStyles.getPropertyValue("--muted").trim() || "#82968c";
+  const isLightTheme = document.documentElement.dataset.theme === "light";
   const rect = canvas.getBoundingClientRect();
   const scale = window.devicePixelRatio || 1;
   canvas.width = Math.max(1, Math.floor(rect.width * scale));
@@ -475,8 +637,18 @@ function drawChart(candles) {
   if (!candles.length) return;
 
   const visible = candles.slice(-70);
-  const high = Math.max(...visible.map(c => Number(c.high)));
-  const low = Math.min(...visible.map(c => Number(c.low)));
+  const orderBlock = state.lastData?.market?.orderBlock || {};
+  const extraLevels = [];
+  if (orderBlock.valid) {
+    extraLevels.push(Number(orderBlock.low), Number(orderBlock.high),
+      Number(orderBlock.entry), Number(orderBlock.stop), Number(orderBlock.target));
+  }
+  if (Number(orderBlock.fvg?.low) && Number(orderBlock.fvg?.high)) {
+    extraLevels.push(Number(orderBlock.fvg.low), Number(orderBlock.fvg.high));
+  }
+  const finiteExtra = extraLevels.filter(Number.isFinite);
+  const high = Math.max(...visible.map(c => Number(c.high)), ...finiteExtra);
+  const low = Math.min(...visible.map(c => Number(c.low)), ...finiteExtra);
   const range = Math.max(.001, high - low);
   const pad = { top: 14, right: 55, bottom: 20, left: 4 };
   const plotW = width - pad.left - pad.right;
@@ -504,7 +676,7 @@ function drawChart(candles) {
     const boxH = 16;
     const boxX = width - pad.right - boxW - 2;
     const boxY = yy - boxH / 2;
-    ctx.fillStyle = "rgba(7,16,13,.92)";
+    ctx.fillStyle = isLightTheme ? "rgba(255,255,255,.94)" : "rgba(7,16,13,.92)";
     ctx.fillRect(boxX, boxY, boxW, boxH);
     ctx.strokeStyle = stroke;
     ctx.strokeRect(boxX, boxY, boxW, boxH);
@@ -513,9 +685,9 @@ function drawChart(candles) {
     ctx.restore();
   }
 
-  ctx.strokeStyle = "rgba(146,178,161,.10)";
+  ctx.strokeStyle = isLightTheme ? "rgba(26,76,54,.12)" : "rgba(146,178,161,.10)";
   ctx.lineWidth = 1;
-  ctx.fillStyle = "#82968c";
+  ctx.fillStyle = themeMuted;
   ctx.font = "10px ui-monospace, monospace";
   for (let i = 0; i <= 4; i++) {
     const yy = pad.top + plotH * i / 4;
@@ -529,13 +701,46 @@ function drawChart(candles) {
 
   const slot = plotW / visible.length;
   const bodyW = Math.max(2, Math.min(8, slot * .58));
+  const xForTime = timestamp => {
+    const target = Number(timestamp || 0);
+    let index = visible.findIndex(c => Number(c.time) >= target);
+    if (index < 0) index = 0;
+    return pad.left + slot * index;
+  };
+
+  if (orderBlock.valid) {
+    const zoneX = xForTime(orderBlock.time);
+    const zoneTop = y(Number(orderBlock.high));
+    const zoneBottom = y(Number(orderBlock.low));
+    ctx.fillStyle = orderBlock.side === "SELL"
+      ? "rgba(255,107,114,.14)" : "rgba(67,242,154,.14)";
+    ctx.strokeStyle = orderBlock.side === "SELL"
+      ? "rgba(255,107,114,.65)" : "rgba(67,242,154,.65)";
+    ctx.fillRect(zoneX, zoneTop, width - pad.right - zoneX,
+      Math.max(1, zoneBottom - zoneTop));
+    ctx.strokeRect(zoneX, zoneTop, width - pad.right - zoneX,
+      Math.max(1, zoneBottom - zoneTop));
+  }
+
+  if (Number(orderBlock.fvg?.low) && Number(orderBlock.fvg?.high)) {
+    const gapX = xForTime(orderBlock.fvg.time);
+    const gapTop = y(Number(orderBlock.fvg.high));
+    const gapBottom = y(Number(orderBlock.fvg.low));
+    ctx.fillStyle = "rgba(98,168,255,.10)";
+    ctx.strokeStyle = "rgba(98,168,255,.5)";
+    ctx.fillRect(gapX, gapTop, width - pad.right - gapX,
+      Math.max(1, gapBottom - gapTop));
+    ctx.strokeRect(gapX, gapTop, width - pad.right - gapX,
+      Math.max(1, gapBottom - gapTop));
+  }
+
   visible.forEach((candle, index) => {
     const x = pad.left + slot * index + slot / 2;
     const open = y(Number(candle.open));
     const close = y(Number(candle.close));
     const up = Number(candle.close) >= Number(candle.open);
-    ctx.strokeStyle = up ? "#43f29a" : "#ff6b72";
-    ctx.fillStyle = up ? "#43f29a" : "#ff6b72";
+    ctx.strokeStyle = up ? themeGreen : themeRed;
+    ctx.fillStyle = up ? themeGreen : themeRed;
     ctx.beginPath();
     ctx.moveTo(x, y(Number(candle.high)));
     ctx.lineTo(x, y(Number(candle.low)));
@@ -543,9 +748,45 @@ function drawChart(candles) {
     ctx.fillRect(x - bodyW / 2, Math.min(open, close), bodyW, Math.max(1, Math.abs(close - open)));
   });
 
+  function drawMarker(timestamp, price, label, color, above = true) {
+    if (!Number(timestamp) || !Number.isFinite(Number(price))) return;
+    const x = xForTime(timestamp);
+    const yy = y(Number(price));
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x, yy);
+    ctx.lineTo(x - 4, yy + (above ? -7 : 7));
+    ctx.lineTo(x + 4, yy + (above ? -7 : 7));
+    ctx.closePath();
+    ctx.fill();
+    ctx.font = "700 9px ui-monospace, monospace";
+    ctx.fillText(label, Math.max(2, x + 5), yy + (above ? -6 : 12));
+    ctx.restore();
+  }
+
+  const structure = state.lastData?.market?.structure || {};
+  drawMarker(structure.supportTime, structure.support, "CONF S", themeGreen, false);
+  drawMarker(structure.resistanceTime, structure.resistance, "CONF R", themeRed, true);
+  drawMarker(orderBlock.time, orderBlock.side === "SELL" ? orderBlock.high : orderBlock.low,
+    "OB", orderBlock.side === "SELL" ? themeRed : themeGreen, orderBlock.side === "SELL");
+  drawMarker(orderBlock.fvg?.time, orderBlock.fvg?.high, "FVG", "#62a8ff", true);
+  drawMarker(orderBlock.mss?.time, orderBlock.mss?.swingPrice, "MSS", themeGold,
+    orderBlock.mss?.side === "SELL");
+  drawMarker(orderBlock.invalidationTime,
+    orderBlock.side === "SELL" ? orderBlock.high : orderBlock.low,
+    orderBlock.state === "EXPIRED" ? "EXPIRED" : "INVALID",
+    themeRed, true);
+
   if (levels) {
-    drawLevel(levels.support, `SUPPORT${levels.source ? "" : ""}`, "rgba(67,242,154,.95)", "#43f29a");
-    drawLevel(levels.resistance, `RESIST${levels.source ? "" : ""}`, "rgba(255,107,114,.95)", "#ff6b72");
+    drawLevel(levels.support, `SUPPORT${levels.source ? "" : ""}`, themeGreen, themeGreen);
+    drawLevel(levels.resistance, `RESIST${levels.source ? "" : ""}`, themeRed, themeRed);
+  }
+  if (orderBlock.valid) {
+    drawLevel(Number(orderBlock.entry), "OB ENTRY", themeGold, themeGold);
+    drawLevel(Number(orderBlock.stop), "OB SL", themeRed, themeRed);
+    drawLevel(Number(orderBlock.target), "OB 3R", themeGreen, themeGreen);
   }
 }
 
@@ -585,7 +826,7 @@ async function refreshLive() {
   try {
     const file = await state.handle.getFile();
     const data = JSON.parse(await file.text());
-    if (Number(data.schema) < 1 || Number(data.schema) > 2) throw new Error("Unsupported dashboard schema");
+    if (Number(data.schema) < 1 || Number(data.schema) > 3) throw new Error("Unsupported dashboard schema");
     state.live = true;
     render(data, true);
   } catch (error) {
@@ -637,7 +878,7 @@ async function connectLive() {
 async function fetchLive() {
   try {
     const data = await fetchJsonFrom(LIVE_ENDPOINTS);
-    if (Number(data.schema) < 1 || Number(data.schema) > 2) throw new Error("Unsupported schema");
+    if (Number(data.schema) < 1 || Number(data.schema) > 3) throw new Error("Unsupported schema");
     state.live = true;
     render(data, true);
     return true;
@@ -704,6 +945,7 @@ async function loadHistory() {
 }
 
 function renderHistory(h) {
+  state.history = h;
   const s = h.summary || {};
   const signals = h.signals || [];
   const closed = s.closed || 0;
@@ -726,6 +968,12 @@ function renderHistory(h) {
     const cls = g.pending ? "pending" : g.ok ? "pass" : "fail";
     const icon = g.pending ? "○" : g.ok ? "✓" : "✗";
     return `<div class="gate ${cls}">${icon} ${g.label}</div>`;
+  }).join("");
+  const tiers = s.score_tiers || {};
+  $("#scoreTiers").innerHTML = [9, 10, 11, 12].map(score => {
+    const tier = tiers[String(score)] || {};
+    const closedCount = Number(tier.closed || 0);
+    return `<div><span>${score}/12 SCORE</span><strong>${closedCount} trade${closedCount === 1 ? "" : "s"} · ${closedCount ? `${number(tier.win_rate_pct, 1)}% WR` : "collecting"}</strong><small>PF ${closedCount ? number(tier.profit_factor, 2) : "--"} · ${closedCount ? number(tier.net_r, 2) : "0.00"}R</small></div>`;
   }).join("");
 
   const pill = $("#historyState");
@@ -750,9 +998,7 @@ function renderHistory(h) {
         ? `<span class="pill-win">TARGET</span>`
         : `<span class="pill-loss">STOP</span>`;
     const resultCls = isOpen ? "" : (isWin ? "win" : "loss");
-    const checks = sig.side === "BUY"
-      ? `${sig.buy_checks_at_open}/12 BUY`
-      : `${sig.sell_checks_at_open}/12 SELL`;
+    const checks = `${sig.signal_score ?? (sig.side === "BUY" ? sig.buy_checks_at_open : sig.sell_checks_at_open)}/12 ${sig.side}`;
     return `<tr class="${rowCls}">
       <td>${escapeHtml(sig.id)}</td>
       <td>${escapeHtml(sig.open_time_str || "--")}</td>
@@ -770,6 +1016,63 @@ function renderHistory(h) {
     </tr>`;
   }).join("");
 }
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function downloadCsv(filename, rows) {
+  const blob = new Blob([rows.map(row => row.map(csvCell).join(",")).join("\r\n")],
+    { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+$("#downloadTrades")?.addEventListener("click", () => {
+  const signals = state.history?.signals || [];
+  downloadCsv("exness-guard-forward-trades.csv", [
+    ["id", "opened", "side", "signal_score", "entry", "stop", "target", "buy_checks", "sell_checks",
+      "outcome", "result_r", "mfe_r", "mae_r", "duration_hours", "status"],
+    ...signals.map(s => [s.id, s.open_time_str, s.side, s.signal_score, s.entry, s.sl, s.tp,
+      s.buy_checks_at_open, s.sell_checks_at_open, s.outcome, s.result_r,
+      s.mfe_r, s.mae_r, s.duration_hours, s.status])
+  ]);
+});
+
+$("#downloadWeekly")?.addEventListener("click", () => {
+  const signals = (state.history?.signals || []).filter(s => s.open_time_str);
+  const weeks = new Map();
+  for (const s of signals) {
+    const normalizedTime = String(s.open_time_str)
+      .replace(/^(\d{4})\.(\d{2})\.(\d{2})\s+/, "$1-$2-$3T");
+    const date = new Date(normalizedTime);
+    if (Number.isNaN(date.getTime())) continue;
+    const monday = new Date(date);
+    const day = (monday.getDay() + 6) % 7;
+    monday.setDate(monday.getDate() - day);
+    const key = monday.toISOString().slice(0, 10);
+    const item = weeks.get(key) || { trades: 0, closed: 0, wins: 0, netR: 0 };
+    item.trades++;
+    if (s.result_r !== null && s.result_r !== undefined) {
+      item.closed++;
+      item.netR += Number(s.result_r) || 0;
+      if (Number(s.result_r) > 0) item.wins++;
+    }
+    weeks.set(key, item);
+  }
+  downloadCsv("exness-guard-weekly-summary.csv", [
+    ["week_start", "signals", "closed", "wins", "win_rate_pct", "net_r"],
+    ...[...weeks.entries()].sort().map(([week, x]) => [
+      week, x.trades, x.closed, x.wins,
+      x.closed ? (x.wins / x.closed * 100).toFixed(2) : "",
+      x.netR.toFixed(2)
+    ])
+  ]);
+});
 
 loadHistory();
 setInterval(loadHistory, 30000);  // refresh history every 30 seconds

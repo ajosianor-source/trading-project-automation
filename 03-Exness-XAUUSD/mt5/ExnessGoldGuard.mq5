@@ -1,8 +1,8 @@
 #property copyright "Exness Gold Guard"
 #property link      "https://www.exness.com"
-#property version   "1.40"
+#property version   "1.42"
 #property strict
-#property description "Guarded Exness XAUUSD/BTCUSD M30/H1/H4 trend-breakout EA."
+#property description "Guarded Exness XAUUSD/BTCUSD MSS/FVG-validated order-block EA."
 
 #include <Trade/Trade.mqh>
 
@@ -26,6 +26,16 @@ input double          InpSellRSI         = 48.0;
 input double          InpStopATR         = 1.4;
 input double          InpTargetATR       = 2.8;
 
+input group "MSS + FVG validated order blocks"
+input bool            InpRequireValidatedOB  = true;
+input int             InpMSSFractalPeriod    = 3;
+input int             InpOBLookback          = 30;
+input int             InpFVGMaxBarsAfterOB   = 3;
+input int             InpOBStopOffsetTicks   = 2;
+input double          InpOBRiskReward         = 3.0;
+input int             InpOBPendingExpiryBars = 12;
+input int             InpMinimumExecutionChecks = 9;
+
 input group "Signal accuracy filters"
 input double          InpATRPercentile       = 60.0;
 input int             InpBlockStartHour      = 20;
@@ -46,6 +56,7 @@ input int             InpMaxTradesPerDay      = 5;
 input double          InpMaxVolumeLots        = 5.00;
 input double          InpMaxMarginUsePct      = 5.00;
 input double          InpMinimumFreeMarginPct = 80.0;
+input double          InpMinimumMarginLevelPct = 150.0;
 input int             InpMaxSpreadPoints      = 500;
 input double          InpMaxSpreadATRPercent  = 10.0;
 input int             InpDeviationPoints      = 30;
@@ -64,6 +75,8 @@ input string          InpLiveConfirmation     = "";
 input bool            InpRequireExnessServer  = true;
 input bool            InpEmergencyStop        = false;
 input ulong           InpMagicNumber          = 26070103;
+input bool            InpShowManualTradeButton = true;
+input bool            InpManualExecutionOnly   = true;
 
 input group "Alerts and messaging"
 input bool            InpEnableTerminalAlerts = true;
@@ -123,6 +136,7 @@ string   signal_side = "WAIT";
 string   signal_detail = "Waiting for first closed 30M candle";
 int      signal_buy_checks = 0;
 int      signal_sell_checks = 0;
+int      signal_execution_checks = 0;
 string   trend_bias = "WAIT";
 string   trend_previous_bias = "WAIT";
 bool     trend_reversal = false;
@@ -176,10 +190,36 @@ bool     factor_buy_tickvol = false;
 bool     factor_sell_tickvol = false;
 bool     factor_buy_sr = false;
 bool     factor_sell_sr = false;
+string   mss_side = "NONE";
+datetime mss_time = 0;
+double   mss_swing_price = 0.0;
+string   fvg_side = "NONE";
+datetime fvg_time = 0;
+double   fvg_low = 0.0;
+double   fvg_high = 0.0;
+bool     ob_valid = false;
+int      ob_direction = 0;
+datetime ob_time = 0;
+datetime ob_created_time = 0;
+datetime ob_expiry_time = 0;
+double   ob_low = 0.0;
+double   ob_high = 0.0;
+double   ob_entry = 0.0;
+double   ob_stop = 0.0;
+double   ob_target = 0.0;
+string   ob_state = "NONE";
+ulong    ob_pending_ticket = 0;
+int      ob_signal_checks = 0;
+datetime ob_invalidation_time = 0;
+string   ob_lifecycle_event[8];
+datetime ob_lifecycle_time[8];
+int      ob_lifecycle_count = 0;
 string   shadow_candidate_side = "NONE";
 bool     shadow_candidate_qualified = false;
+bool     shadow_pending = false;
 bool     shadow_open = false;
 int      shadow_direction = 0;
+int      shadow_signal_checks = 0;
 datetime shadow_open_time = 0;
 double   shadow_entry = 0.0;
 double   shadow_stop = 0.0;
@@ -199,6 +239,8 @@ double   shadow_peak_r = 0.0;
 double   shadow_max_drawdown_r = 0.0;
 datetime last_shadow_save = 0;
 datetime last_dashboard_export = 0;
+datetime manual_confirm_until = 0;
+const string MANUAL_BUTTON_NAME = "EGG_MANUAL_TRADE";
 int      execution_fills = 0;
 double   execution_slippage_total = 0.0;
 double   execution_slippage_max = 0.0;
@@ -386,6 +428,22 @@ void SavePersistentState()
    GlobalVariableSet(StateKey("day_equity"), day_start_equity);
    GlobalVariableSet(StateKey("peak"), equity_peak);
    GlobalVariableSet(StateKey("bar"), (double)last_bar_time);
+   GlobalVariableSet(StateKey("ob_valid"), ob_valid ? 1.0 : 0.0);
+   GlobalVariableSet(StateKey("ob_direction"), (double)ob_direction);
+   GlobalVariableSet(StateKey("ob_time"), (double)ob_time);
+   GlobalVariableSet(StateKey("ob_created"), (double)ob_created_time);
+   GlobalVariableSet(StateKey("ob_expiry"), (double)ob_expiry_time);
+   GlobalVariableSet(StateKey("ob_low"), ob_low);
+   GlobalVariableSet(StateKey("ob_high"), ob_high);
+   GlobalVariableSet(StateKey("ob_entry"), ob_entry);
+   GlobalVariableSet(StateKey("ob_stop"), ob_stop);
+   GlobalVariableSet(StateKey("ob_target"), ob_target);
+   GlobalVariableSet(StateKey("ob_checks"), (double)ob_signal_checks);
+   GlobalVariableSet(StateKey("mss_time"), (double)mss_time);
+   GlobalVariableSet(StateKey("mss_price"), mss_swing_price);
+   GlobalVariableSet(StateKey("fvg_time"), (double)fvg_time);
+   GlobalVariableSet(StateKey("fvg_low"), fvg_low);
+   GlobalVariableSet(StateKey("fvg_high"), fvg_high);
 }
 
 void RefreshPersistentRiskState()
@@ -418,6 +476,45 @@ void LoadPersistentState()
                                GlobalVariableGet(StateKey("peak")));
       if(GlobalVariableCheck(StateKey("bar")))
          last_bar_time = (datetime)GlobalVariableGet(StateKey("bar"));
+      if(GlobalVariableCheck(StateKey("ob_valid")))
+         ob_valid = GlobalVariableGet(StateKey("ob_valid")) > 0.5;
+      if(GlobalVariableCheck(StateKey("ob_direction")))
+         ob_direction = (int)GlobalVariableGet(StateKey("ob_direction"));
+      if(GlobalVariableCheck(StateKey("ob_time")))
+         ob_time = (datetime)GlobalVariableGet(StateKey("ob_time"));
+      if(GlobalVariableCheck(StateKey("ob_created")))
+         ob_created_time = (datetime)GlobalVariableGet(StateKey("ob_created"));
+      if(GlobalVariableCheck(StateKey("ob_expiry")))
+         ob_expiry_time = (datetime)GlobalVariableGet(StateKey("ob_expiry"));
+      if(GlobalVariableCheck(StateKey("ob_low")))
+         ob_low = GlobalVariableGet(StateKey("ob_low"));
+      if(GlobalVariableCheck(StateKey("ob_high")))
+         ob_high = GlobalVariableGet(StateKey("ob_high"));
+      if(GlobalVariableCheck(StateKey("ob_entry")))
+         ob_entry = GlobalVariableGet(StateKey("ob_entry"));
+      if(GlobalVariableCheck(StateKey("ob_stop")))
+         ob_stop = GlobalVariableGet(StateKey("ob_stop"));
+      if(GlobalVariableCheck(StateKey("ob_target")))
+         ob_target = GlobalVariableGet(StateKey("ob_target"));
+      if(GlobalVariableCheck(StateKey("ob_checks")))
+         ob_signal_checks = (int)GlobalVariableGet(StateKey("ob_checks"));
+      if(GlobalVariableCheck(StateKey("mss_time")))
+         mss_time = (datetime)GlobalVariableGet(StateKey("mss_time"));
+      if(GlobalVariableCheck(StateKey("mss_price")))
+         mss_swing_price = GlobalVariableGet(StateKey("mss_price"));
+      if(GlobalVariableCheck(StateKey("fvg_time")))
+         fvg_time = (datetime)GlobalVariableGet(StateKey("fvg_time"));
+      if(GlobalVariableCheck(StateKey("fvg_low")))
+         fvg_low = GlobalVariableGet(StateKey("fvg_low"));
+      if(GlobalVariableCheck(StateKey("fvg_high")))
+         fvg_high = GlobalVariableGet(StateKey("fvg_high"));
+
+      if(ob_valid && ob_direction != 0)
+      {
+         mss_side = ob_direction > 0 ? "BUY" : "SELL";
+         fvg_side = mss_side;
+         ob_state = "VALID";
+      }
 
       // A strictly increasing epoch permits an audited, one-time baseline
       // adjustment after an external deposit or withdrawal. The stored marker
@@ -502,7 +599,9 @@ void SaveShadowState()
    if(MQLInfoInteger(MQL_TESTER))
       return;
    GlobalVariableSet(StateKey("shadow_open"), shadow_open ? 1.0 : 0.0);
+   GlobalVariableSet(StateKey("shadow_pending"), shadow_pending ? 1.0 : 0.0);
    GlobalVariableSet(StateKey("shadow_direction"), shadow_direction);
+   GlobalVariableSet(StateKey("shadow_checks"), shadow_signal_checks);
    GlobalVariableSet(StateKey("shadow_time"), (double)shadow_open_time);
    GlobalVariableSet(StateKey("shadow_entry"), shadow_entry);
    GlobalVariableSet(StateKey("shadow_stop"), shadow_stop);
@@ -533,7 +632,9 @@ void LoadShadowState()
    if(MQLInfoInteger(MQL_TESTER))
       return;
    shadow_open = StateValue("shadow_open") > 0.5;
+   shadow_pending = StateValue("shadow_pending") > 0.5;
    shadow_direction = (int)StateValue("shadow_direction");
+   shadow_signal_checks = (int)StateValue("shadow_checks");
    shadow_open_time = (datetime)StateValue("shadow_time");
    shadow_entry = StateValue("shadow_entry");
    shadow_stop = StateValue("shadow_stop");
@@ -593,29 +694,33 @@ double ShadowVolume(const ENUM_ORDER_TYPE type, const double entry,
    return NormalizeDouble(volume, VolumeDigits(step));
 }
 
-void StartShadowTrade(const int direction, const double atr)
+void StartShadowTrade(const int direction, const double atr,
+                      const int signal_checks)
 {
-   if(!InpEnableShadowTrading || shadow_open ||
+   if(!InpEnableShadowTrading || shadow_open || shadow_pending ||
       PositionSelect(active_symbol))
       return;
    MqlTick tick = {};
    if(!SymbolInfoTick(active_symbol, tick) || atr <= 0.0)
       return;
    const double point = SymbolInfoDouble(active_symbol, SYMBOL_POINT);
-   const double entry = direction > 0 ? tick.ask : tick.bid;
-   double stop = direction > 0 ? entry - atr * InpStopATR
+   const double entry = InpRequireValidatedOB ? ob_entry :
+                        direction > 0 ? tick.ask : tick.bid;
+   double stop = InpRequireValidatedOB ? ob_stop :
+                 direction > 0 ? entry - atr * InpStopATR
                                : entry + atr * InpStopATR;
-   double target = direction > 0 ? entry + atr * InpTargetATR
+   double target = InpRequireValidatedOB ? ob_target :
+                   direction > 0 ? entry + atr * InpTargetATR
                                  : entry - atr * InpTargetATR;
    const double minimum_distance =
       (double)SymbolInfoInteger(active_symbol, SYMBOL_TRADE_STOPS_LEVEL) *
       point;
-   if(direction > 0)
+   if(!InpRequireValidatedOB && direction > 0)
    {
       stop = MathMin(stop, tick.bid - minimum_distance);
       target = MathMax(target, tick.ask + minimum_distance);
    }
-   else
+   else if(!InpRequireValidatedOB)
    {
       stop = MathMax(stop, tick.ask + minimum_distance);
       target = MathMin(target, tick.bid - minimum_distance);
@@ -636,8 +741,12 @@ void StartShadowTrade(const int direction, const double atr)
    if(!OrderCalcProfit(type, active_symbol, volume, entry, stop,
                        calculated_risk))
       return;
-   shadow_open = true;
+   const bool limit_reached = direction > 0
+      ? tick.ask <= entry : tick.bid >= entry;
+   shadow_pending = InpRequireValidatedOB && !limit_reached;
+   shadow_open = !shadow_pending;
    shadow_direction = direction;
+   shadow_signal_checks = signal_checks;
    shadow_open_time = TimeTradeServer() > 0
       ? TimeTradeServer() : TimeCurrent();
    shadow_entry = entry;
@@ -649,21 +758,51 @@ void StartShadowTrade(const int direction, const double atr)
    shadow_mae_r = 0.0;
    SaveShadowState();
    const string message = StringFormat(
-      "%s virtual %s %.2f lots | entry %.3f | SL %.3f | TP %.3f | risk %.2f",
-      active_symbol, direction > 0 ? "BUY" : "SELL", volume,
-      entry, stop, target, shadow_risk_cash);
-   JournalActivity("SHADOW_ENTRY", message);
+      "%s virtual %s %s %.2f lots | entry %.3f | SL %.3f | TP %.3f | risk %.2f | score %d/12",
+      active_symbol, direction > 0 ? "BUY" : "SELL",
+      shadow_pending ? "LIMIT PENDING" : "OPEN", volume,
+      entry, stop, target, shadow_risk_cash, shadow_signal_checks);
+   JournalActivity(shadow_pending ? "SHADOW_PENDING" : "SHADOW_ENTRY",
+                   message);
    if(InpEnableShadowAlerts)
       QueueAlert("PAPER", message);
 }
 
 void UpdateShadowTrade()
 {
-   if(!InpEnableShadowTrading || !shadow_open)
+   if(!InpEnableShadowTrading || (!shadow_open && !shadow_pending))
       return;
    MqlTick tick = {};
    if(!SymbolInfoTick(active_symbol, tick))
       return;
+   if(shadow_pending)
+   {
+      if(!ob_valid || ob_direction != shadow_direction)
+      {
+         shadow_pending = false;
+         shadow_direction = 0;
+         shadow_signal_checks = 0;
+         SaveShadowState();
+         JournalActivity("SHADOW_CANCELLED",
+                         "Validated Order Block invalidated or replaced");
+         return;
+      }
+      const bool limit_reached = shadow_direction > 0
+         ? tick.ask <= shadow_entry : tick.bid >= shadow_entry;
+      if(!limit_reached)
+         return;
+      shadow_pending = false;
+      shadow_open = true;
+      shadow_open_time = TimeTradeServer() > 0
+         ? TimeTradeServer() : TimeCurrent();
+      SaveShadowState();
+      JournalActivity("SHADOW_ENTRY",
+         StringFormat("%s virtual %s OPEN %.2f lots | entry %.3f | SL %.3f | TP %.3f | risk %.2f | score %d/12",
+                      active_symbol,
+                      shadow_direction > 0 ? "BUY" : "SELL",
+                      shadow_volume, shadow_entry, shadow_stop, shadow_target,
+                      shadow_risk_cash, shadow_signal_checks));
+   }
    const double exit_price =
       shadow_direction > 0 ? tick.bid : tick.ask;
    const double risk_distance = MathAbs(shadow_entry - shadow_stop);
@@ -715,14 +854,16 @@ void UpdateShadowTrade()
    shadow_max_drawdown_r = MathMax(
       shadow_max_drawdown_r, shadow_peak_r - shadow_net_r);
    const string message = StringFormat(
-      "%s virtual %s | %.2fR | P/L %.2f | MFE %.2fR | MAE %.2fR",
+      "%s virtual %s | %.2fR | P/L %.2f | MFE %.2fR | MAE %.2fR | score %d/12",
       active_symbol, outcome, result_r, result_cash,
-      shadow_mfe_r, shadow_mae_r);
+      shadow_mfe_r, shadow_mae_r, shadow_signal_checks);
    JournalActivity("SHADOW_EXIT", message);
    if(InpEnableShadowAlerts)
       QueueAlert("PAPER", message);
    shadow_open = false;
+   shadow_pending = false;
    shadow_direction = 0;
+   shadow_signal_checks = 0;
    shadow_open_time = 0;
    shadow_entry = 0.0;
    shadow_stop = 0.0;
@@ -998,6 +1139,7 @@ string ShadowJson()
       InpShadowReferenceEquity * InpRiskPercent / 100.0;
    return "{\"enabled\":" + JBool(InpEnableShadowTrading) +
       ",\"referenceEquity\":" + JNumber(InpShadowReferenceEquity, 2) +
+      ",\"pending\":" + JBool(shadow_pending) +
       ",\"open\":" + JBool(shadow_open) +
       ",\"side\":" +
          JString(shadow_direction > 0 ? "BUY" :
@@ -1047,6 +1189,79 @@ bool HasGuardPosition()
          return true;
    }
    return false;
+}
+
+void RecordOBLifecycle(const string event)
+{
+   for(int i = 7; i > 0; i--)
+   {
+      ob_lifecycle_event[i] = ob_lifecycle_event[i - 1];
+      ob_lifecycle_time[i] = ob_lifecycle_time[i - 1];
+   }
+   ob_lifecycle_event[0] = event;
+   ob_lifecycle_time[0] = TimeGMT();
+   ob_lifecycle_count = MathMin(8, ob_lifecycle_count + 1);
+}
+
+string OBLifecycleJson()
+{
+   string json = "[";
+   for(int i = 0; i < ob_lifecycle_count; i++)
+   {
+      if(i > 0)
+         json += ",";
+      json += "{\"event\":" + JString(ob_lifecycle_event[i]) +
+              ",\"time\":" + IntegerToString((long)ob_lifecycle_time[i]) + "}";
+   }
+   return json + "]";
+}
+
+string AccountPositionsJson()
+{
+   string json = "[";
+   int written = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      const ulong ticket = PositionGetTicket(i);
+      if(ticket == 0)
+         continue;
+      if(written++ > 0)
+         json += ",";
+      const ENUM_POSITION_TYPE type =
+         (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      const long magic = PositionGetInteger(POSITION_MAGIC);
+      json += "{\"ticket\":" + IntegerToString((long)ticket) +
+         ",\"symbol\":" + JString(PositionGetString(POSITION_SYMBOL)) +
+         ",\"side\":" + JString(type == POSITION_TYPE_BUY ? "BUY" : "SELL") +
+         ",\"volume\":" + JNumber(PositionGetDouble(POSITION_VOLUME), 2) +
+         ",\"entry\":" + JNumber(PositionGetDouble(POSITION_PRICE_OPEN), 3) +
+         ",\"stop\":" + JNumber(PositionGetDouble(POSITION_SL), 3) +
+         ",\"target\":" + JNumber(PositionGetDouble(POSITION_TP), 3) +
+         ",\"profit\":" +
+            JNumber(PositionGetDouble(POSITION_PROFIT) +
+                    PositionGetDouble(POSITION_SWAP), 2) +
+         ",\"magic\":" + IntegerToString(magic) +
+         ",\"guardManaged\":" + JBool((ulong)magic == InpMagicNumber) + "}";
+   }
+   return json + "]";
+}
+
+bool MarginDefenceLocked(string &reason)
+{
+   const double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   const double free_margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   const double margin = AccountInfoDouble(ACCOUNT_MARGIN);
+   const double level = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+   if(equity <= 0.0)
+      reason = "Account equity is not positive";
+   else if(free_margin <= 0.0)
+      reason = "Account-wide lock: free margin is not positive";
+   else if(margin > 0.0 && level < InpMinimumMarginLevelPct)
+      reason = StringFormat("Account-wide lock: margin level %.1f%% below %.1f%%",
+                            level, InpMinimumMarginLevelPct);
+   else
+      reason = "";
+   return reason != "";
 }
 
 string PositionJson()
@@ -1109,20 +1324,52 @@ string CandlesJson()
 
 string StructureJson()
 {
-   const int window = MathMax(2, MathMin(InpBreakoutBars, InpDashboardCandleBars));
-   double highs[];
-   double lows[];
-   ArrayResize(highs, window);
-   ArrayResize(lows, window);
-   if(CopyHigh(active_symbol, InpSignalTimeframe, 1, window, highs) != window ||
-      CopyLow(active_symbol, InpSignalTimeframe, 1, window, lows) != window)
-      return "{\"support\":null,\"resistance\":null,\"window\":" + IntegerToString(window) + "}";
+   double resistance = 0.0, support = 0.0;
+   datetime resistance_time = 0, support_time = 0;
+   const bool have_resistance =
+      RecentFractalSwing(1, resistance, resistance_time);
+   const bool have_support =
+      RecentFractalSwing(-1, support, support_time);
+   return "{\"method\":\"CONFIRMED_FRACTAL\",\"nonRepainting\":true" +
+      ",\"period\":" + IntegerToString(InpMSSFractalPeriod) +
+      ",\"support\":" + (have_support ? JNumber(support, 3) : "null") +
+      ",\"supportTime\":" + IntegerToString((long)support_time) +
+      ",\"resistance\":" +
+         (have_resistance ? JNumber(resistance, 3) : "null") +
+      ",\"resistanceTime\":" + IntegerToString((long)resistance_time) + "}";
+}
 
-   const double support = lows[ArrayMinimum(lows)];
-   const double resistance = highs[ArrayMaximum(highs)];
-   return "{\"support\":" + JNumber(support, 3) +
-      ",\"resistance\":" + JNumber(resistance, 3) +
-      ",\"window\":" + IntegerToString(window) + "}";
+string OrderBlockJson()
+{
+   const bool pending = HasGuardPendingOrder();
+   return "{\"required\":" + JBool(InpRequireValidatedOB) +
+      ",\"state\":" + JString(ob_state) +
+      ",\"valid\":" + JBool(ob_valid) +
+      ",\"side\":" +
+         JString(ob_direction > 0 ? "BUY" :
+                 ob_direction < 0 ? "SELL" : "NONE") +
+      ",\"time\":" + IntegerToString((long)ob_time) +
+      ",\"createdTime\":" + IntegerToString((long)ob_created_time) +
+      ",\"expiryTime\":" + IntegerToString((long)ob_expiry_time) +
+      ",\"low\":" + JNumber(ob_low, 3) +
+      ",\"high\":" + JNumber(ob_high, 3) +
+      ",\"entry\":" + JNumber(ob_entry, 3) +
+      ",\"stop\":" + JNumber(ob_stop, 3) +
+      ",\"target\":" + JNumber(ob_target, 3) +
+      ",\"pending\":" + JBool(pending) +
+      ",\"pendingTicket\":" +
+         IntegerToString((long)ob_pending_ticket) +
+      ",\"signalChecks\":" + IntegerToString(ob_signal_checks) +
+      ",\"invalidationTime\":" +
+         IntegerToString((long)ob_invalidation_time) +
+      ",\"lifecycle\":" + OBLifecycleJson() +
+      ",\"mss\":{\"side\":" + JString(mss_side) +
+         ",\"time\":" + IntegerToString((long)mss_time) +
+         ",\"swingPrice\":" + JNumber(mss_swing_price, 3) + "}" +
+      ",\"fvg\":{\"side\":" + JString(fvg_side) +
+         ",\"time\":" + IntegerToString((long)fvg_time) +
+         ",\"low\":" + JNumber(fvg_low, 3) +
+         ",\"high\":" + JNumber(fvg_high, 3) + "}}";
 }
 
 string ValidationJson()
@@ -1244,8 +1491,22 @@ void ExportDashboard()
       iTime(active_symbol, InpSignalTimeframe, 0);
    const datetime next_bar = current_bar > 0
       ? current_bar + PeriodSeconds(InpSignalTimeframe) : 0;
+   const datetime last_closed_bar =
+      iTime(active_symbol, InpSignalTimeframe, 1);
+   const int tick_age = tick.time > 0 && server_now > tick.time
+      ? (int)(server_now - tick.time) : 0;
+   const bool market_open =
+      TerminalInfoInteger(TERMINAL_CONNECTED) && tick.time > 0 &&
+      tick_age <= MathMax(300, InpMaxTickAgeSeconds * 6);
+   const int candle_age = last_closed_bar > 0 && server_now > last_closed_bar
+      ? (int)(server_now - last_closed_bar) : 0;
+   const bool candle_stale =
+      last_closed_bar <= 0 ||
+      candle_age > PeriodSeconds(InpSignalTimeframe) * 3;
+   string margin_lock_reason = "";
+   const bool margin_locked = MarginDefenceLocked(margin_lock_reason);
 
-   string json = "{\"schema\":2,\"heartbeat\":" + IntegerToString((long)now) +
+   string json = "{\"schema\":3,\"heartbeat\":" + IntegerToString((long)now) +
       ",\"serverTime\":" + IntegerToString((long)server_now) +
       ",\"terminal\":{\"connected\":" +
          JBool(TerminalInfoInteger(TERMINAL_CONNECTED)) +
@@ -1259,10 +1520,13 @@ void ExportDashboard()
          ",\"balance\":" + JNumber(AccountInfoDouble(ACCOUNT_BALANCE), 2) +
          ",\"equity\":" + JNumber(equity, 2) +
          ",\"freeMargin\":" + JNumber(AccountInfoDouble(ACCOUNT_MARGIN_FREE), 2) +
-         ",\"marginLevel\":" + JNumber(AccountInfoDouble(ACCOUNT_MARGIN_LEVEL), 2) + "}" +
-      ",\"engine\":{\"version\":\"1.40\",\"mode\":" + JString(DashboardMode()) +
+         ",\"marginLevel\":" + JNumber(AccountInfoDouble(ACCOUNT_MARGIN_LEVEL), 2) +
+         ",\"positions\":" + AccountPositionsJson() + "}" +
+      ",\"engine\":{\"version\":\"1.42\",\"mode\":" + JString(DashboardMode()) +
          ",\"status\":" + JString(status_text) +
          ",\"emergencyStop\":" + JBool(InpEmergencyStop) +
+         ",\"manualButton\":" + JBool(InpShowManualTradeButton) +
+         ",\"manualExecutionOnly\":" + JBool(InpManualExecutionOnly) +
          ",\"exnessVerified\":" +
          JBool(ContainsNoCase(AccountInfoString(ACCOUNT_SERVER), "EXNESS")) + "}" +
       ",\"market\":{\"symbol\":" + JString(active_symbol) +
@@ -1283,8 +1547,21 @@ void ExportDashboard()
             JBool(shadow_candidate_qualified) +
          ",\"shadowCandidateThreshold\":" +
             IntegerToString(InpShadowCandidateChecks) +
+         ",\"minimumExecutionChecks\":" +
+            IntegerToString(InpMinimumExecutionChecks) +
+         ",\"executionChecks\":" +
+            IntegerToString(signal_execution_checks) +
          ",\"nextBarTime\":" + IntegerToString((long)next_bar) +
+         ",\"lastClosedBarTime\":" +
+            IntegerToString((long)last_closed_bar) +
+         ",\"candleAgeSeconds\":" + IntegerToString(candle_age) +
+         ",\"candleStale\":" + JBool(candle_stale) +
+         ",\"session\":{\"open\":" + JBool(market_open) +
+            ",\"state\":" + JString(market_open ? "MARKET OPEN" :
+                                     "MARKET CLOSED") +
+            ",\"tickAgeSeconds\":" + IntegerToString(tick_age) + "}" +
          ",\"structure\":" + StructureJson() +
+         ",\"orderBlock\":" + OrderBlockJson() +
          ",\"factors\":{\"h1\":{\"buy\":" + JBool(factor_buy_h1) +
             ",\"sell\":" + JBool(factor_sell_h1) + "}" +
             ",\"h4\":{\"buy\":" + JBool(factor_buy_h4) +
@@ -1331,7 +1608,11 @@ void ExportDashboard()
          ",\"drawdownLimit\":" + JNumber(InpMaxDrawdownPct, 3) +
          ",\"tradesToday\":" + IntegerToString(today_entries) +
          ",\"tradesLimit\":" + IntegerToString(InpMaxTradesPerDay) +
-         ",\"realizedToday\":" + JNumber(today_result, 2) + "}" +
+         ",\"realizedToday\":" + JNumber(today_result, 2) +
+         ",\"marginDefence\":{\"locked\":" + JBool(margin_locked) +
+            ",\"minimumMarginLevel\":" +
+               JNumber(InpMinimumMarginLevelPct, 1) +
+            ",\"reason\":" + JString(margin_lock_reason) + "}}" +
       ",\"position\":" + PositionJson() +
       ",\"shadow\":" + ShadowJson() +
       ",\"validation\":" + ValidationJson() +
@@ -1443,6 +1724,8 @@ bool ExecutionAllowed(string &reason)
       reason = "A Gold Guard family position is already open";
       return false;
    }
+   if(MarginDefenceLocked(reason))
+      return false;
 
    double today_result;
    int today_entries;
@@ -1592,8 +1875,246 @@ bool StochasticSignal(const int direction, double &stoch_k)
 // Advanced S&R: Order Block detector (bonus factor - does not count toward 12/12 threshold)
 // Buy OB:  last bearish candle before a bullish impulse — price retesting that zone
 // Sell OB: last bullish candle before a bearish impulse — price retesting that zone
+bool RecentFractalSwing(const int direction, double &price,
+                        datetime &swing_time)
+{
+   const int period = InpMSSFractalPeriod;
+   const int maximum_shift = InpOBLookback + period + 1;
+   for(int shift = period + 1; shift <= maximum_shift; shift++)
+   {
+      const double candidate = direction > 0
+         ? iHigh(active_symbol, InpSignalTimeframe, shift)
+         : iLow(active_symbol, InpSignalTimeframe, shift);
+      if(candidate <= 0.0)
+         continue;
+      bool is_fractal = true;
+      for(int offset = 1; offset <= period; offset++)
+      {
+         const double newer = direction > 0
+            ? iHigh(active_symbol, InpSignalTimeframe, shift - offset)
+            : iLow(active_symbol, InpSignalTimeframe, shift - offset);
+         const double older = direction > 0
+            ? iHigh(active_symbol, InpSignalTimeframe, shift + offset)
+            : iLow(active_symbol, InpSignalTimeframe, shift + offset);
+         if((direction > 0 && (candidate <= newer || candidate <= older)) ||
+            (direction < 0 && (candidate >= newer || candidate >= older)))
+         {
+            is_fractal = false;
+            break;
+         }
+      }
+      if(is_fractal)
+      {
+         price = candidate;
+         swing_time = iTime(active_symbol, InpSignalTimeframe, shift);
+         return swing_time > 0;
+      }
+   }
+   return false;
+}
+
+bool HasGuardPendingOrder()
+{
+   ob_pending_ticket = 0;
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      const ulong ticket = OrderGetTicket(i);
+      if(ticket == 0 ||
+         OrderGetString(ORDER_SYMBOL) != active_symbol ||
+         (ulong)OrderGetInteger(ORDER_MAGIC) != InpMagicNumber)
+         continue;
+      const ENUM_ORDER_TYPE type =
+         (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(type == ORDER_TYPE_BUY_LIMIT || type == ORDER_TYPE_SELL_LIMIT)
+      {
+         ob_pending_ticket = ticket;
+         return true;
+      }
+   }
+   return false;
+}
+
+void CancelGuardPendingOrder(const string reason)
+{
+   if(!HasGuardPendingOrder())
+      return;
+   if(trade.OrderDelete(ob_pending_ticket))
+   {
+      JournalActivity("OB_ORDER_CANCELLED",
+         StringFormat("%I64u | %s", ob_pending_ticket, reason));
+      RecordOBLifecycle("CANCELLED");
+      ob_pending_ticket = 0;
+   }
+   else
+      Print("Exness Guard: pending OB cancellation failed, retcode ",
+            trade.ResultRetcode(), " ", trade.ResultRetcodeDescription());
+}
+
+void InvalidateOrderBlock(const string reason)
+{
+   CancelGuardPendingOrder(reason);
+   ob_valid = false;
+   ob_state = reason;
+   ob_invalidation_time = iTime(active_symbol, InpSignalTimeframe, 1);
+   factor_buy_sr = false;
+   factor_sell_sr = false;
+   JournalActivity("OB_INVALIDATED", reason);
+   RecordOBLifecycle(reason);
+   SavePersistentState();
+}
+
+void UpdateValidatedOrderBlock()
+{
+   const double closed_price = iClose(active_symbol, InpSignalTimeframe, 1);
+   const datetime closed_time = iTime(active_symbol, InpSignalTimeframe, 1);
+   if(closed_price <= 0.0 || closed_time <= 0)
+      return;
+
+   if(ob_valid)
+   {
+      if((ob_direction > 0 && closed_price < ob_low) ||
+         (ob_direction < 0 && closed_price > ob_high))
+         InvalidateOrderBlock("INVALIDATED");
+      else if(ob_expiry_time > 0 && closed_time >= ob_expiry_time &&
+              !HasGuardPosition())
+         InvalidateOrderBlock("EXPIRED");
+   }
+
+   double swing_high = 0.0, swing_low = 0.0;
+   datetime swing_high_time = 0, swing_low_time = 0;
+   const bool have_high =
+      RecentFractalSwing(1, swing_high, swing_high_time);
+   const bool have_low =
+      RecentFractalSwing(-1, swing_low, swing_low_time);
+   const double previous_close =
+      iClose(active_symbol, InpSignalTimeframe, 2);
+   const bool bullish_mss =
+      have_high && closed_price > swing_high && previous_close <= swing_high;
+   const bool bearish_mss =
+      have_low && closed_price < swing_low && previous_close >= swing_low;
+   if(!bullish_mss && !bearish_mss)
+      return;
+
+   const int direction = bullish_mss ? 1 : -1;
+   RecordOBLifecycle(direction > 0 ? "MSS BUY" : "MSS SELL");
+   const double broken_swing = bullish_mss ? swing_high : swing_low;
+   int candidate_shift = -1;
+   for(int shift = 2; shift <= InpOBLookback + 1; shift++)
+   {
+      const double candle_open =
+         iOpen(active_symbol, InpSignalTimeframe, shift);
+      const double candle_close =
+         iClose(active_symbol, InpSignalTimeframe, shift);
+      if((direction > 0 && candle_close < candle_open) ||
+         (direction < 0 && candle_close > candle_open))
+      {
+         candidate_shift = shift;
+         break;
+      }
+   }
+
+   if(candidate_shift < 0)
+   {
+      if(!ob_valid)
+         ob_state = "MSS_NO_OB";
+      return;
+   }
+
+   bool fvg_found = false;
+   int fvg_shift = -1;
+   double gap_low = 0.0, gap_high = 0.0;
+   const int maximum_gap_bars = MathMin(3, InpFVGMaxBarsAfterOB);
+   for(int bars_after = 2; bars_after <= maximum_gap_bars; bars_after++)
+   {
+      const int candle3_shift = candidate_shift - bars_after;
+      const int candle1_shift = candle3_shift + 2;
+      if(candle3_shift < 1)
+         continue;
+      const double candle1_high =
+         iHigh(active_symbol, InpSignalTimeframe, candle1_shift);
+      const double candle1_low =
+         iLow(active_symbol, InpSignalTimeframe, candle1_shift);
+      const double candle3_high =
+         iHigh(active_symbol, InpSignalTimeframe, candle3_shift);
+      const double candle3_low =
+         iLow(active_symbol, InpSignalTimeframe, candle3_shift);
+      if(direction > 0 && candle1_high < candle3_low)
+      {
+         fvg_found = true;
+         fvg_shift = candle3_shift;
+         gap_low = candle1_high;
+         gap_high = candle3_low;
+         break;
+      }
+      if(direction < 0 && candle1_low > candle3_high)
+      {
+         fvg_found = true;
+         fvg_shift = candle3_shift;
+         gap_low = candle3_high;
+         gap_high = candle1_low;
+         break;
+      }
+   }
+   if(!fvg_found)
+   {
+      if(!ob_valid)
+      {
+         fvg_side = "NONE";
+         ob_state = "MSS_NO_FVG";
+      }
+      return;
+   }
+   RecordOBLifecycle(direction > 0 ? "FVG BUY" : "FVG SELL");
+
+   CancelGuardPendingOrder("replaced by newer validated OB");
+   mss_side = direction > 0 ? "BUY" : "SELL";
+   mss_time = closed_time;
+   mss_swing_price = broken_swing;
+   ob_direction = direction;
+   ob_invalidation_time = 0;
+   ob_time = iTime(active_symbol, InpSignalTimeframe, candidate_shift);
+   ob_created_time = closed_time;
+   ob_expiry_time = closed_time +
+      (datetime)(PeriodSeconds(InpSignalTimeframe) * InpOBPendingExpiryBars);
+   ob_low = iLow(active_symbol, InpSignalTimeframe, candidate_shift);
+   ob_high = iHigh(active_symbol, InpSignalTimeframe, candidate_shift);
+   const double ob_open =
+      iOpen(active_symbol, InpSignalTimeframe, candidate_shift);
+   const double ob_close =
+      iClose(active_symbol, InpSignalTimeframe, candidate_shift);
+   ob_entry = NormalizePrice(direction > 0
+      ? MathMax(ob_open, ob_close) : MathMin(ob_open, ob_close));
+   const double tick_size =
+      MathMax(SymbolInfoDouble(active_symbol, SYMBOL_TRADE_TICK_SIZE),
+              SymbolInfoDouble(active_symbol, SYMBOL_POINT));
+   ob_stop = NormalizePrice(direction > 0
+      ? ob_low - InpOBStopOffsetTicks * tick_size
+      : ob_high + InpOBStopOffsetTicks * tick_size);
+   const double risk_distance = MathAbs(ob_entry - ob_stop);
+   ob_target = NormalizePrice(direction > 0
+      ? ob_entry + risk_distance * InpOBRiskReward
+      : ob_entry - risk_distance * InpOBRiskReward);
+   ob_valid = risk_distance > 0.0;
+   ob_state = ob_valid ? "VALID" : "INVALID_GEOMETRY";
+   RecordOBLifecycle(ob_state);
+   fvg_side = mss_side;
+   fvg_time = iTime(active_symbol, InpSignalTimeframe, fvg_shift);
+   fvg_low = gap_low;
+   fvg_high = gap_high;
+   factor_buy_sr = ob_valid && direction > 0;
+   factor_sell_sr = ob_valid && direction < 0;
+   JournalActivity("OB_VALIDATED",
+      StringFormat("%s | OB %.3f-%.3f | FVG %.3f-%.3f | entry %.3f | SL %.3f | TP %.3f",
+                   mss_side, ob_low, ob_high, fvg_low, fvg_high,
+                   ob_entry, ob_stop, ob_target));
+   SavePersistentState();
+}
+
 bool OrderBlockSignal(const int direction)
 {
+   if(InpRequireValidatedOB)
+      return ob_valid && ob_direction == direction;
+
    const int lookback = 30;
    double closes[], opens[], highs[], lows[];
    ArraySetAsSeries(closes, true);
@@ -1779,7 +2300,8 @@ int Signal(double &atr, string &detail, int &buy_checks, int &sell_checks,
    const bool buy_tickvol = TickVolumeConfirmation();
    const bool sell_tickvol = buy_tickvol;
 
-   // Bonus S&R factor: order block retest (does not count toward 12/12 threshold)
+   // v1.42 mixed-score mode retains the validated MSS/FVG Order Block gate.
+   // When strict OB mode is disabled this remains the v1.40 bonus factor.
    const bool buy_sr  = OrderBlockSignal(1);
    const bool sell_sr = OrderBlockSignal(-1);
 
@@ -1823,13 +2345,21 @@ int Signal(double &atr, string &detail, int &buy_checks, int &sell_checks,
    else if(sell_h1 && sell_h4)
       current_trend = "SELL";
 
-   // Append S&R bonus to detail (does not affect 12/12 threshold)
-   const string sr_suffix = buy_sr ? " | OB BUY" : sell_sr ? " | OB SELL" : "";
+   const string sr_suffix = buy_sr ? " | VALID OB BUY" :
+                            sell_sr ? " | VALID OB SELL" : "";
    detail = StringFormat("BUY %d/12 | SELL %d/12 | RSI %.1f | ADX %.1f | ATR %.2f",
                          buy_checks, sell_checks, rsi, adx, atr) + sr_suffix;
-   if(buy_checks == 12)
+   const bool buy_core = buy_h1 && buy_h4 && buy_momentum &&
+      buy_strength && buy_timeofday && buy_ema_slope &&
+      (buy_breakout || buy_m5_confirm);
+   const bool sell_core = sell_h1 && sell_h4 && sell_momentum &&
+      sell_strength && sell_timeofday && sell_ema_slope &&
+      (sell_breakout || sell_m5_confirm);
+   if(buy_checks >= InpMinimumExecutionChecks && buy_core &&
+      (!InpRequireValidatedOB || (ob_valid && ob_direction > 0)))
       return 1;
-   if(sell_checks == 12)
+   if(sell_checks >= InpMinimumExecutionChecks && sell_core &&
+      (!InpRequireValidatedOB || (ob_valid && ob_direction < 0)))
       return -1;
    return 0;
 }
@@ -1846,16 +2376,153 @@ int ShadowCandidateDirection(const int buy_checks, const int sell_checks)
       (factor_sell_breakout || factor_sell_m5_confirm);
 
    if(buy_core && buy_checks >= InpShadowCandidateChecks &&
+      (!InpRequireValidatedOB || (ob_valid && ob_direction > 0)) &&
       buy_checks > sell_checks)
       return 1;
    if(sell_core && sell_checks >= InpShadowCandidateChecks &&
+      (!InpRequireValidatedOB || (ob_valid && ob_direction < 0)) &&
       sell_checks > buy_checks)
       return -1;
    return 0;
 }
 
+void PlaceValidatedOBOrder(const int direction, const double atr)
+{
+   string reason = "";
+   if(!ob_valid || ob_direction != direction)
+      reason = "No matching MSS/FVG-validated Order Block";
+   else if(HasGuardPendingOrder())
+      reason = "A validated Order Block limit order is already pending";
+   else if(!ExecutionAllowed(reason))
+   {
+      // ExecutionAllowed supplies the reason.
+   }
+   if(reason != "")
+   {
+      status_text = reason;
+      if(InpEnableRiskAlerts)
+         QueueAlert("RISK", active_symbol + " | " + reason);
+      return;
+   }
+
+   MqlTick tick = {};
+   if(!SymbolInfoTick(active_symbol, tick))
+   {
+      status_text = "No current tick";
+      return;
+   }
+   const datetime server_time = TimeTradeServer();
+   if(tick.time <= 0 || server_time - tick.time > InpMaxTickAgeSeconds)
+   {
+      status_text = "Stale market price blocked";
+      return;
+   }
+   const double point = SymbolInfoDouble(active_symbol, SYMBOL_POINT);
+   const double spread_points = point > 0.0
+      ? (tick.ask - tick.bid) / point : 0.0;
+   const double spread_atr_pct = atr > 0.0
+      ? (tick.ask - tick.bid) / atr * 100.0 : 999.0;
+   if(spread_points > InpMaxSpreadPoints ||
+      spread_atr_pct > InpMaxSpreadATRPercent)
+   {
+      status_text = StringFormat("Spread blocked: %.0f points",
+                                 spread_points);
+      return;
+   }
+
+   const double entry = ob_entry;
+   const double stop = ob_stop;
+   const double target = ob_target;
+   if((direction > 0 && entry >= tick.ask) ||
+      (direction < 0 && entry <= tick.bid))
+   {
+      status_text = "OB limit entry already reached or passed";
+      ob_state = "MISSED";
+      return;
+   }
+   const double minimum_distance =
+      (double)SymbolInfoInteger(active_symbol, SYMBOL_TRADE_STOPS_LEVEL) *
+      point;
+   if((direction > 0 &&
+       (entry - stop < minimum_distance ||
+        target - entry < minimum_distance)) ||
+      (direction < 0 &&
+       (stop - entry < minimum_distance ||
+        entry - target < minimum_distance)))
+   {
+      status_text = "OB geometry violates broker stop-distance rules";
+      ob_state = "BROKER_DISTANCE_BLOCKED";
+      return;
+   }
+
+   const ENUM_ORDER_TYPE market_type =
+      direction > 0 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   const double volume = RiskVolume(market_type, entry, stop);
+   if(volume <= 0.0)
+   {
+      status_text = "Calculated volume is below broker minimum";
+      return;
+   }
+   double required_margin = 0.0;
+   if(!OrderCalcMargin(market_type, active_symbol, volume, entry,
+                       required_margin))
+   {
+      status_text = "Unable to calculate required margin";
+      return;
+   }
+   const double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   const double free_margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   if(equity <= 0.0 ||
+      required_margin > equity * InpMaxMarginUsePct / 100.0 ||
+      free_margin < required_margin ||
+      (free_margin - required_margin) / equity * 100.0 <
+       InpMinimumFreeMarginPct)
+   {
+      status_text = "Insufficient free-margin safety buffer";
+      return;
+   }
+
+   trade.SetExpertMagicNumber(InpMagicNumber);
+   trade.SetTypeFillingBySymbol(active_symbol);
+   const string order_comment =
+      StringFormat("EG142 OB %d/12", signal_execution_checks);
+   const bool sent = direction > 0
+      ? trade.BuyLimit(volume, entry, active_symbol, stop, target,
+                       ORDER_TIME_GTC, 0, order_comment)
+      : trade.SellLimit(volume, entry, active_symbol, stop, target,
+                        ORDER_TIME_GTC, 0, order_comment);
+   const uint retcode = trade.ResultRetcode();
+   if(!sent ||
+      (retcode != TRADE_RETCODE_PLACED &&
+       retcode != TRADE_RETCODE_DONE &&
+       retcode != TRADE_RETCODE_DONE_PARTIAL))
+   {
+      status_text = StringFormat("OB limit failed: %u %s", retcode,
+                                 trade.ResultRetcodeDescription());
+      QueueAlert("RISK", active_symbol + " | " + status_text);
+      return;
+   }
+   ob_pending_ticket = trade.ResultOrder();
+   ob_signal_checks = signal_execution_checks;
+   ob_state = "LIMIT_PENDING";
+   RecordOBLifecycle("LIMIT PENDING");
+   status_text = StringFormat("%s %d/12 LIMIT %.2f lots @ %.3f | SL %.3f | TP %.3f",
+                              direction > 0 ? "BUY" : "SELL",
+                              signal_execution_checks, volume,
+                              entry, stop, target);
+   JournalActivity("OB_ORDER_PLACED", status_text);
+   SavePersistentState();
+   QueueAlert("TRADE", active_symbol + " | " + status_text);
+}
+
 void PlaceOrder(const int direction, const double atr)
 {
+   if(InpRequireValidatedOB)
+   {
+      PlaceValidatedOBOrder(direction, atr);
+      return;
+   }
+
    string reason = "";
    if(!ExecutionAllowed(reason))
    {
@@ -2043,6 +2710,72 @@ void PlaceOrder(const int direction, const double atr)
    JournalActivity("ORDER_SENT", status_text);
 }
 
+bool ManualTradeReady(string &reason)
+{
+   if(!InpShowManualTradeButton)
+   {
+      reason = "Manual button disabled in inputs";
+      return false;
+   }
+   if(signal_execution_checks < InpMinimumExecutionChecks ||
+      (signal_side != "BUY" && signal_side != "SELL"))
+   {
+      reason = "No qualified 9-12/12 signal";
+      return false;
+   }
+   const int direction = signal_side == "BUY" ? 1 : -1;
+   if(!ob_valid || ob_direction != direction)
+   {
+      reason = "No matching validated Order Block";
+      return false;
+   }
+   return ExecutionAllowed(reason);
+}
+
+void EnsureManualTradeButton()
+{
+   if(!InpShowManualTradeButton)
+   {
+      ObjectDelete(0, MANUAL_BUTTON_NAME);
+      return;
+   }
+   if(ObjectFind(0, MANUAL_BUTTON_NAME) < 0)
+   {
+      if(!ObjectCreate(0, MANUAL_BUTTON_NAME, OBJ_BUTTON, 0, 0, 0))
+         return;
+      ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_CORNER,
+                       CORNER_RIGHT_UPPER);
+      ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_XDISTANCE, 18);
+      ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_YDISTANCE, 42);
+      ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_XSIZE, 235);
+      ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_YSIZE, 34);
+      ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_FONTSIZE, 9);
+      ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_HIDDEN, false);
+   }
+
+   string reason = "";
+   const bool ready = ManualTradeReady(reason);
+   const bool confirming = ready && manual_confirm_until >= TimeLocal();
+   string label = "MANUAL TRADE: BLOCKED";
+   color background = clrFireBrick;
+   if(ready)
+   {
+      label = confirming
+         ? StringFormat("CONFIRM %s %d/12 LIMIT",
+                        signal_side, signal_execution_checks)
+         : StringFormat("ARM %s %d/12 LIMIT",
+                        signal_side, signal_execution_checks);
+      background = confirming ? clrDarkOrange : clrSeaGreen;
+   }
+   ObjectSetString(0, MANUAL_BUTTON_NAME, OBJPROP_TEXT, label);
+   ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_BGCOLOR, background);
+   ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_COLOR, clrWhite);
+   ObjectSetString(0, MANUAL_BUTTON_NAME, OBJPROP_TOOLTIP,
+      ready ? "Two clicks within 10 seconds submit the validated OB limit"
+            : reason);
+}
+
 void UpdateChart()
 {
    string mode = "TRADING ARMED";
@@ -2053,10 +2786,11 @@ void UpdateChart()
       mode = "SIGNALS ONLY";
    else if(real_account && !InpConfirmLiveAccount)
       mode = "LIVE LOCKED";
-   Comment("Exness Guard v1.40\n",
-           active_symbol, " | M30/H1/H4 trend breakout\n",
+   Comment("Exness Guard v1.42\n",
+           active_symbol, " | M30/H1/H4 + MSS/FVG Order Blocks\n",
            "Risk: ", DoubleToString(InpRiskPercent, 2), "% | ", mode, "\n",
            status_text);
+   EnsureManualTradeButton();
 }
 
 int OnInit()
@@ -2077,8 +2811,15 @@ int OnInit()
       InpDailyLossLimitPct <= 0.0 || InpMaxDrawdownPct <= 0.0 ||
       InpMaxTradesPerDay < 1 || InpMaxVolumeLots <= 0.0 ||
       InpMaxMarginUsePct <= 0.0 || InpMaxMarginUsePct > 100.0 ||
+      InpMinimumMarginLevelPct < 100.0 ||
       InpMinimumFreeMarginPct < 0.0 ||
       InpMinimumFreeMarginPct >= 100.0 ||
+      InpMSSFractalPeriod < 1 || InpMSSFractalPeriod > 10 ||
+      InpOBLookback < 5 || InpOBLookback > 200 ||
+      InpFVGMaxBarsAfterOB < 2 || InpFVGMaxBarsAfterOB > 3 ||
+      InpOBStopOffsetTicks < 0 || InpOBRiskReward <= 0.0 ||
+      InpOBPendingExpiryBars < 1 ||
+      InpMinimumExecutionChecks < 9 || InpMinimumExecutionChecks > 12 ||
       InpMaxTickAgeSeconds < 1 || InpDashboardRefreshSec < 1 ||
       InpDashboardCandleBars < 20 ||
       InpWhatsAppTimeoutMs < 100 ||
@@ -2127,7 +2868,7 @@ int OnInit()
    }
    trade.SetExpertMagicNumber(InpMagicNumber);
    status_text = "Ready; waiting for a closed 30M candle";
-   JournalActivity("EA_START", "Exness Guard v1.40 initialized in " +
+   JournalActivity("EA_START", "Exness Guard v1.42 initialized in " +
                    DashboardMode());
    EventSetTimer(InpDashboardRefreshSec);
    if(InpExportDashboard)
@@ -2149,6 +2890,7 @@ void OnDeinit(const int reason)
                    "EA removed or terminal stopped, reason " +
                    IntegerToString(reason));
    EventKillTimer();
+   ObjectDelete(0, MANUAL_BUTTON_NAME);
    if(fast_handle != INVALID_HANDLE) IndicatorRelease(fast_handle);
    if(slow_handle != INVALID_HANDLE) IndicatorRelease(slow_handle);
    if(trend_fast_handle != INVALID_HANDLE) IndicatorRelease(trend_fast_handle);
@@ -2183,10 +2925,17 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 
    if(entry == DEAL_ENTRY_IN)
    {
+      if(InpRequireValidatedOB)
+      {
+         ob_pending_ticket = 0;
+         ob_state = "FILLED";
+         RecordOBLifecycle("FILLED");
+         SavePersistentState();
+      }
       const string side = type == DEAL_TYPE_BUY ? "BUY" : "SELL";
       const string fill_message =
-         StringFormat("%s %s %.2f lots filled at %s",
-                      symbol, side, volume,
+         StringFormat("%s %s %d/12 %.2f lots filled at %s",
+                      symbol, side, ob_signal_checks, volume,
                       DoubleToString(price,
                          (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS)));
       JournalActivity("FILL", fill_message);
@@ -2222,6 +2971,47 @@ void OnTimer()
    UpdateChart();
 }
 
+void OnChartEvent(const int id, const long &lparam,
+                  const double &dparam, const string &sparam)
+{
+   if(id != CHARTEVENT_OBJECT_CLICK || sparam != MANUAL_BUTTON_NAME)
+      return;
+   ObjectSetInteger(0, MANUAL_BUTTON_NAME, OBJPROP_STATE, false);
+   string reason = "";
+   if(!ManualTradeReady(reason))
+   {
+      manual_confirm_until = 0;
+      status_text = "Manual trade blocked: " + reason;
+      JournalActivity("MANUAL_TRADE_BLOCKED", reason);
+      QueueAlert("RISK", active_symbol + " | " + status_text);
+      UpdateChart();
+      return;
+   }
+   if(manual_confirm_until < TimeLocal())
+   {
+      manual_confirm_until = TimeLocal() + 10;
+      status_text = StringFormat(
+         "Manual %s %d/12 armed; click again within 10 seconds",
+         signal_side, signal_execution_checks);
+      JournalActivity("MANUAL_TRADE_ARMED", status_text);
+      UpdateChart();
+      return;
+   }
+
+   manual_confirm_until = 0;
+   double atr = 0.0;
+   if(!ReadValue(atr_handle, 0, 1, atr) || atr <= 0.0)
+   {
+      status_text = "Manual trade blocked: ATR unavailable";
+      UpdateChart();
+      return;
+   }
+   JournalActivity("MANUAL_TRADE_CONFIRMED",
+      StringFormat("%s %d/12", signal_side, signal_execution_checks));
+   PlaceValidatedOBOrder(signal_side == "BUY" ? 1 : -1, atr);
+   UpdateChart();
+}
+
 void OnTick()
 {
    // Belt-and-braces fallback: normally OnTimer exports every two seconds. If
@@ -2241,6 +3031,7 @@ void OnTick()
    }
    last_bar_time = current_bar;
    SavePersistentState(); // Mark first so a restart cannot duplicate this bar.
+   UpdateValidatedOrderBlock();
 
    double atr = 0.0;
    string detail = "";
@@ -2254,6 +3045,8 @@ void OnTick()
       ? ShadowCandidateDirection(buy_checks, sell_checks) : 0;
    signal_buy_checks = buy_checks;
    signal_sell_checks = sell_checks;
+   signal_execution_checks = direction > 0 ? buy_checks :
+                             direction < 0 ? sell_checks : 0;
    trend_previous_bias = previous_trend;
    trend_reversal = previous_trend != "WAIT" && current_trend != "WAIT" &&
                     current_trend != previous_trend;
@@ -2292,7 +3085,8 @@ void OnTick()
                             shadow_candidate > 0 ? "BUY" : "SELL",
                             shadow_candidate > 0 ? buy_checks : sell_checks,
                             detail));
-            StartShadowTrade(shadow_candidate, atr);
+            StartShadowTrade(shadow_candidate, atr,
+               shadow_candidate > 0 ? buy_checks : sell_checks);
          }
          else
          {
@@ -2306,10 +3100,18 @@ void OnTick()
       signal_side = direction > 0 ? "BUY" : "SELL";
       status_text = (direction > 0 ? "BUY signal | " : "SELL signal | ") + detail;
       QueueAlert("TRADE",
-         StringFormat("%s TRADE | Trend: %s | %s 12/12 | %s",
-                      active_symbol, current_trend, signal_side, detail));
+         StringFormat("%s TRADE | Trend: %s | %s %d/12 | %s",
+                      active_symbol, current_trend, signal_side,
+                      signal_execution_checks, detail));
       if(!InpEnableTrading)
-         StartShadowTrade(direction, atr);
+         StartShadowTrade(direction, atr, signal_execution_checks);
+      else if(InpManualExecutionOnly)
+      {
+         status_text = StringFormat(
+            "MANUAL READY | %s %d/12 | click chart button twice",
+            signal_side, signal_execution_checks);
+         JournalActivity("MANUAL_TRADE_READY", status_text);
+      }
       else
          PlaceOrder(direction, atr);
    }

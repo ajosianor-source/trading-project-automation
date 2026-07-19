@@ -1,9 +1,37 @@
-# Exness Guard Validation (v1.40)
+# Exness Guard Validation (v1.41)
 
 **Status**: Pre-release validation required  
-**EA Version**: 1.40 (12-factor accuracy system)  
+**EA Version**: 1.42 research (9–12/12 mixed score + MSS/FVG Order Block gate)
 **Last Updated**: 9 July 2026  
 **Prior v1.32 Results**: See archived validation below  
+
+## v1.41 change-control boundary
+
+## v1.42 mixed-score evidence boundary
+
+Version 1.42 is a new population and must not inherit v1.41 performance claims.
+Eligible 9/12, 10/12, 11/12 and 12/12 signals retain the core direction gates
+and validated MSS/FVG Order Block. Every pending order, fill and shadow result
+is tagged with its original score. Review each score tier separately and do not
+promote a tier until it independently has a meaningful forward sample.
+
+Version 1.41 retains every v1.40 factor and safety control. With
+`InpRequireValidatedOB=true`, a 12/12 direction is executable only when it
+matches a still-valid fractal-3 MSS and immediate FVG-validated Order Block.
+The order is a pending limit at the OB body boundary with a two-tick
+wick-offset stop and fixed 3R target. This is a new strategy population:
+v1.40 results must not be presented as v1.41 evidence.
+
+Run separate development, holdout and signals-only forward windows. Verify:
+
+- MSS occurs only when a completed M30 close crosses the latest confirmed
+  fractal-3 swing.
+- The selected OB is the last opposite-colour candle before the MSS.
+- The matching FVG completes two or three candles after the OB.
+- Invalidated and expired zones cancel both real and shadow pending limits.
+- Every filled limit retains its original SL and 3R TP.
+- Dashboard schema 3 matches the Experts journal for MSS, FVG, OB and order
+  lifecycle events.
 
 ## Pre-Validation Checklist (Required Before Any Mode)
 
@@ -105,7 +133,7 @@ Neither instrument was approved for live automation. XAUUSDm showed stronger res
 
 ---
 
-## v1.40 Validation Plan
+## v1.41 Validation Plan
 
 **Expected Changes from 12-Factor System**:
 - Trade frequency: ↓ 50–60% (tighter filtering)
@@ -113,7 +141,7 @@ Neither instrument was approved for live automation. XAUUSDm showed stronger res
 - Profit factor: ↑ 2.2–2.5 (reduced whipsaws)
 - Max drawdown: ↓ 0.08–0.10% (smoother curve)
 
-**v1.40 Backtest** (To be scheduled after checklist completion):
+**v1.41 Backtest** (required before any v1.41 live use):
 - Re-run full 6-month Jan–Jun 2026 on both symbols
 - Compare profit factor, win rate, drawdown vs v1.32
 - If profit factor <1.8 on holdout, investigate parameter tuning before live

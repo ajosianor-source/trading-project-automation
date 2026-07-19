@@ -16,7 +16,7 @@ private account telemetry.
 
 To connect the running EA:
 
-1. Attach Exness Guard v1.40 to the Exness XAUUSD or BTCUSD H1 chart and load
+1. Attach Exness Guard v1.41 to the Exness XAUUSD or BTCUSD M30 chart and load
    the matching preset.
 2. Wait for the MT5 Experts log to print the dashboard feed path.
 3. Use **Connect MT5 live file** only if you are opening the HTML file directly
@@ -28,3 +28,8 @@ The page only reads the JSON feed. It contains no order controls. The local
 server proxies the newest EA feed from MT5's Common Files directory (with the
 project `runtime` directory as a fallback), so refreshes do not require a new
 file permission prompt.
+
+Version 1.41 uses dashboard schema 3. The market-structure panel displays the
+latest fractal-3 MSS, its immediate FVG, the validated Order Block zone, exact
+limit entry, two-tick stop, 3R target, expiry and pending-order state. Older
+schema 1 and 2 feeds remain readable, but they cannot provide these fields.
