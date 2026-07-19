@@ -1,0 +1,45 @@
+name: Deploy production
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag: { description: "Immutable commit SHA", required: true }
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  deploy:
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce repository production gates
+        run: python scripts/production_readiness.py --image-tag "${{ inputs.image_tag }}"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: "${{ secrets.AWS_DEPLOY_ROLE_ARN }}"
+          aws-region: eu-west-2
+      - uses: aws-actions/amazon-eks-update-kubeconfig@v4
+        with: { cluster-name: healthgov-production }
+      - uses: sigstore/cosign-installer@v3
+      - name: Verify signed images
+        run: |
+          for service in \
+            phi-classifier compliance-engine cicd-orchestrator audit-service \
+            interoperability-gateway iomt-security-hub risk-engine \
+            deidentification-service ml-security tenant-service plugin-registry \
+            reporting-service alerting-engine rbac-service data-lake-connector \
+            observability-service healthcare-marketplace data-ingestion data-store \
+            synthetic-phi-service compliance-event-service dsp-toolkit-service \
+            iso27001-service soc2-service iomt-security-service; do
+            cosign verify "ghcr.io/${GITHUB_REPOSITORY}/${service}:${{ inputs.image_tag }}" \
+              --certificate-identity-regexp="^https://github.com/${GITHUB_REPOSITORY}/" \
+              --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+          done
+      - name: Deploy the verified immutable image set
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          kubectl kustomize infra/kubernetes/overlays/prod \
+            | sed "s#ghcr.io/example/healthgov/#ghcr.io/${GITHUB_REPOSITORY}/#g; s#:IMAGE_TAG#:${IMAGE_TAG}#g" \
+            | kubectl apply -f -
+      - run: kubectl rollout status deployment --all -n healthgov --timeout=5m

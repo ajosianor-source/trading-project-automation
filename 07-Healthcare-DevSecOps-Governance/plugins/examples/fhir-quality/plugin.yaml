@@ -1,0 +1,19 @@
+apiVersion: plugins.healthgov.io/v1alpha1
+kind: Plugin
+metadata:
+  id: fhir-quality
+  version: 1.0.0
+spec:
+  image: ghcr.io/example/healthgov-plugins/fhir-quality@sha256:REPLACE_WITH_DIGEST
+  permissions: [fhir.metadata.read, findings.write]
+  subscriptions: [clinical.fhir.validated.v1]
+  processesPHI: false
+  network:
+    mode: none
+  resources:
+    cpu: 250m
+    memory: 256Mi
+  sandbox:
+    runtimeClassName: gvisor
+    readOnlyRootFilesystem: true
+

@@ -1,0 +1,22 @@
+federated_learning:
+  transport:
+    mtls: true
+    minimum_tls: "1.3"
+    participant_attestation: true
+  aggregation:
+    secure_aggregation: required
+    minimum_participants: 3
+    robust_aggregator: trimmed-mean
+    update_norm_clipping: required
+    anomaly_quarantine: true
+  privacy:
+    differential_privacy: required
+    maximum_epsilon: 8.0
+    delta: 0.00001
+    privacy_ledger: immutable
+  governance:
+    site_contract_required: true
+    dataset_card_required: true
+    model_update_signature_required: true
+    cross_border_policy_decision_required: true
+

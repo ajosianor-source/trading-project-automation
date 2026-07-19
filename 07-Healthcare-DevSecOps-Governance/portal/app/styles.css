@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --muted: 214 32% 91%;
+  --border: 214 28% 88%;
+  --primary: 168 76% 36%;
+  --danger: 0 72% 51%;
+  --warning: 36 92% 50%;
+  --radius: 0.8rem;
+  --font-sans: "Inter";
+  --font-mono: "JetBrains Mono";
+}
+
+.dark {
+  --background: 222 47% 6%;
+  --foreground: 210 40% 96%;
+  --card: 222 40% 9%;
+  --muted: 217 27% 16%;
+  --border: 217 24% 17%;
+  --primary: 166 72% 45%;
+  --danger: 0 63% 51%;
+  --warning: 38 92% 50%;
+}
+
+* { border-color: hsl(var(--border)); }
+html { scroll-behavior: smooth; }
+body {
+  min-height: 100vh;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 82% -10%, hsl(var(--primary) / .09), transparent 28rem),
+    hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: hsl(var(--primary) / .28); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: hsl(var(--foreground) / .16); border-radius: 999px; }
+
+@layer components {
+  .eyebrow { @apply text-[11px] font-bold uppercase tracking-[.16em] text-primary; }
+  .metric-value { @apply text-2xl font-semibold tracking-tight sm:text-3xl; }
+  .grid-dashboard { @apply grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-12; }
+  .focus-ring { @apply outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

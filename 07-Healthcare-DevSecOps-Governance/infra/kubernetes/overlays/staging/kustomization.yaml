@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - ../../components/interoperability
+  - ../../components/iomt
+  - ../../components/saas
+  - ../../components/ai
+  - ../../components/staging-data-plane
+patches:
+  - target: { kind: ConfigMap, name: healthgov-config }
+    patch: |-
+      - op: replace
+        path: /data/ENVIRONMENT
+        value: staging

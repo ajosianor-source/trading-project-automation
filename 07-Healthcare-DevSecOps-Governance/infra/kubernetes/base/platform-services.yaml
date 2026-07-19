@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: compliance-engine, namespace: healthgov }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: compliance-engine } }
+  template:
+    metadata: { labels: { app: compliance-engine } }
+    spec:
+      serviceAccountName: healthgov-runtime
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: app
+          image: ghcr.io/example/healthgov/compliance-engine:IMAGE_TAG
+          ports: [{ name: http, containerPort: 8000 }]
+          envFrom: [{ configMapRef: { name: healthgov-config } }]
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /healthz, port: http } }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: { sizeLimit: 32Mi } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: cicd-orchestrator, namespace: healthgov }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: cicd-orchestrator } }
+  template:
+    metadata: { labels: { app: cicd-orchestrator } }
+    spec:
+      serviceAccountName: healthgov-runtime
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: app
+          image: ghcr.io/example/healthgov/cicd-orchestrator:IMAGE_TAG
+          ports: [{ name: http, containerPort: 8000 }]
+          envFrom: [{ configMapRef: { name: healthgov-config } }]
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /healthz, port: http } }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: { sizeLimit: 32Mi } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: audit-service, namespace: healthgov }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: audit-service } }
+  template:
+    metadata: { labels: { app: audit-service } }
+    spec:
+      serviceAccountName: healthgov-runtime
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: app
+          image: ghcr.io/example/healthgov/audit-service:IMAGE_TAG
+          ports: [{ name: http, containerPort: 8000 }]
+          envFrom: [{ configMapRef: { name: healthgov-config } }]
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /healthz, port: http } }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: { sizeLimit: 32Mi } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: compliance-engine, namespace: healthgov }
+spec: { selector: { app: compliance-engine }, ports: [{ name: http, port: 8000, targetPort: http }] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: cicd-orchestrator, namespace: healthgov }
+spec: { selector: { app: cicd-orchestrator }, ports: [{ name: http, port: 8000, targetPort: http }] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: audit-service, namespace: healthgov }
+spec: { selector: { app: audit-service }, ports: [{ name: http, port: 8000, targetPort: http }] }

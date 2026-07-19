@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: interoperability-gateway, namespace: healthgov }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: interoperability-gateway } }
+  template:
+    metadata: { labels: { app: interoperability-gateway, data-zone: clinical } }
+    spec:
+      serviceAccountName: healthgov-runtime
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: gateway
+          image: ghcr.io/example/healthgov/interoperability-gateway:IMAGE_TAG
+          ports: [{ name: http, containerPort: 8000 }]
+          resources: { requests: { cpu: 250m, memory: 256Mi }, limits: { cpu: "1", memory: 1Gi } }
+          readinessProbe: { httpGet: { path: /healthz, port: http } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: { sizeLimit: 256Mi } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: interoperability-gateway, namespace: healthgov }
+spec: { selector: { app: interoperability-gateway }, ports: [{ name: http, port: 8000, targetPort: http }] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: interoperability-isolation, namespace: healthgov }
+spec:
+  podSelector: { matchLabels: { app: interoperability-gateway } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: gateway } } }]
+      ports: [{ port: 8000 }]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: kafka } } }]
+      ports: [{ port: 9093 }]
+

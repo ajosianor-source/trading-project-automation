@@ -1,0 +1,17 @@
+firmware_policy:
+  accepted_signatures: [cosign-keyless, manufacturer-x509]
+  require_sbom: true
+  sbom_formats: [cyclonedx-json, spdx-json]
+  scanners: [trivy, binwalk, semgrep]
+  block:
+    severities: [CRITICAL, HIGH]
+    unsigned: true
+    default_credentials: true
+    private_keys: true
+    known_exploited_vulnerability: true
+  analysis:
+    entropy: true
+    filesystem_extraction: true
+    hardening: [nx, pie, relro, stack-canary]
+  evidence_retention_days: 3650
+

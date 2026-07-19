@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: iomt-security-hub, namespace: healthgov }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: iomt-security-hub } }
+  template:
+    metadata: { labels: { app: iomt-security-hub, data-zone: device } }
+    spec:
+      serviceAccountName: healthgov-runtime
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: hub
+          image: ghcr.io/example/healthgov/iomt-security-hub:IMAGE_TAG
+          ports: [{ name: http, containerPort: 8000 }]
+          resources: { requests: { cpu: 250m, memory: 256Mi }, limits: { cpu: "1", memory: 1Gi } }
+          readinessProbe: { httpGet: { path: /healthz, port: http } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: { sizeLimit: 64Mi } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: iomt-security-hub, namespace: healthgov }
+spec: { selector: { app: iomt-security-hub }, ports: [{ name: http, port: 8000, targetPort: http }] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: iomt-isolation, namespace: healthgov }
+spec:
+  podSelector: { matchLabels: { data-zone: device } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ namespaceSelector: { matchLabels: { zone: iomt-gateway } } }]
+      ports: [{ port: 8000 }]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: kafka } } }]
+      ports: [{ port: 9093 }]
+

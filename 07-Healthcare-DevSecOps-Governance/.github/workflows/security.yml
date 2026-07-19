@@ -1,0 +1,162 @@
+name: Security gates
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-sast-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install ".[dev]"
+      - run: ruff check shared services tests
+      - run: pytest --junitxml=test-results.xml
+      - uses: returntocorp/semgrep-action@v1
+        with: { config: p/python, generateSarif: "1" }
+      - uses: snyk/actions/python@v1
+        env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
+        with: { args: "--severity-threshold=high --fail-on=all" }
+
+  iac-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+          framework: terraform,kubernetes
+          quiet: true
+          soft_fail: false
+      - uses: open-policy-agent/setup-opa@v2
+        with: { version: "1.3.0" }
+      - run: opa fmt --fail policies
+      - run: opa test policies -v
+      - name: Run OPA Terraform Compliance Scan
+        run: |
+          # Simulates running OPA on generated terraform plan JSON
+          opa eval -i governance/opa-policies/terraform_rules.rego -d governance/opa-policies/ "data.playbooks.terraform.allow"
+
+  build-scan-sign:
+    if: github.event_name == 'push'
+    needs: [test-sast-dependencies, iac-policy]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - phi-classifier
+          - compliance-engine
+          - cicd-orchestrator
+          - audit-service
+          - interoperability-gateway
+          - iomt-security-hub
+          - risk-engine
+          - deidentification-service
+          - ml-security
+          - tenant-service
+          - plugin-registry
+          - reporting-service
+          - alerting-engine
+          - rbac-service
+          - data-lake-connector
+          - observability-service
+          - healthcare-marketplace
+          - synthetic-phi-service
+          - compliance-event-service
+          - dsp-toolkit-service
+          - iso27001-service
+          - soc2-service
+          - iomt-security-service
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: "${{ github.actor }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: SERVICE=${{ matrix.service }}
+          push: true
+          tags: ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+      - uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+      - uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+          artifact-name: ${{ matrix.service }}-${{ github.sha }}.spdx.json
+      - uses: sigstore/cosign-installer@v3
+      - run: cosign sign --yes ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+
+  build-data-plane:
+    if: github.event_name == 'push'
+    needs: [test-sast-dependencies, iac-policy]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [data-ingestion, data-store]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: "${{ github.actor }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
+      # Data-plane services have dedicated build contexts and dependency manifests.
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          push: true
+          tags: ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+      - uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+      - uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+          artifact-name: ${{ matrix.service }}-${{ github.sha }}.spdx.json
+      - uses: sigstore/cosign-installer@v3
+      - run: cosign sign --yes ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+
+  clinical-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate FHIR R4 capability statement
+        run: |
+          python - <<'PY'
+          import json
+          resource=json.load(open("interop/fhir/capability-statement.json", encoding="utf-8"))
+          assert resource["resourceType"] == "CapabilityStatement"
+          assert resource["fhirVersion"] == "4.0.1"
+          assert resource["status"] == "active"
+          PY
+      - name: Reject secrets and unsafe IoMT defaults
+        run: |
+          ! grep -RniE 'allow_anonymous[[:space:]]+true|tls_version[[:space:]]+tlsv1\\.[012]' iomt

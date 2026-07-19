@@ -1,0 +1,31 @@
+name: Production release readiness
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -e ".[dev]"
+      - name: Static fail-closed production checks
+        run: python scripts/production_readiness.py --output release-evidence/readiness.json
+      - name: Security and tenant isolation tests
+        run: pytest -q
+      - name: Lint security-critical Python
+        run: ruff check shared services tests scripts
+      - name: Validate OPA policy suite
+        run: docker run --rm -v "$PWD/policies:/policies:ro" openpolicyagent/opa:1.5.1-static test /policies
+      - name: Validate Compose topology
+        run: docker compose config --quiet
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-readiness-evidence
+          path: release-evidence/
+          retention-days: 365

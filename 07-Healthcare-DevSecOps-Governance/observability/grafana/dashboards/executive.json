@@ -1,0 +1,16 @@
+{
+  "title": "HealthGov Executive Risk",
+  "uid": "healthgov-exec",
+  "schemaVersion": 39,
+  "tags": ["healthcare", "executive", "compliance"],
+  "time": {"from": "now-30d", "to": "now"},
+  "panels": [
+    {"type": "stat", "title": "Composite control effectiveness", "targets": [{"expr": "100 * sum(healthgov_control{status=\"effective\"}) / sum(healthgov_control)"}], "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0}},
+    {"type": "stat", "title": "Unaccepted safety risks", "targets": [{"expr": "sum(healthgov_risk{accepted=\"false\",domain=\"clinical_safety\"})"}], "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0}},
+    {"type": "stat", "title": "Critical vulnerabilities", "targets": [{"expr": "sum(healthgov_vulnerability{severity=\"critical\",status=\"open\"})"}], "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0}},
+    {"type": "stat", "title": "Trusted IoMT fleet", "targets": [{"expr": "100 * sum(iomt_device_trust{trusted=\"true\"}) / sum(iomt_device_trust)"}], "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0}},
+    {"type": "timeseries", "title": "PHI access and denial trend", "targets": [{"expr": "sum by (outcome) (rate(phi_access_total[1h]))"}], "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5}},
+    {"type": "bargauge", "title": "Framework control posture", "targets": [{"expr": "100 * sum by (framework) (healthgov_control{status=\"effective\"}) / sum by (framework) (healthgov_control)"}], "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5}}
+  ]
+}
+

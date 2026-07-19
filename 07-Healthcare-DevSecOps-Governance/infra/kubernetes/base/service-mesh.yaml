@@ -1,0 +1,52 @@
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: healthgov
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: default
+  namespace: healthgov
+spec:
+  host: "*.healthgov.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: service-to-service-auth
+  namespace: healthgov
+spec:
+  selector:
+    matchLabels:
+      app: phi-classifier
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/healthgov/sa/data-ingestion"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: data-store-auth
+  namespace: healthgov
+spec:
+  selector:
+    matchLabels:
+      app: data-store
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/healthgov/sa/data-ingestion"
+              - "cluster.local/ns/healthgov/sa/deidentification-service"
+              - "cluster.local/ns/healthgov/sa/tenant-service"

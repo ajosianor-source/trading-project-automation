@@ -1,0 +1,97 @@
+name: Stakeholder integration security
+
+on:
+  pull_request:
+    paths:
+      - "services/**"
+      - "stakeholder-integrations/**"
+      - "policies/**"
+      - "infra/**"
+      - "gateway/**"
+      - "portal/**"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+
+concurrency:
+  group: stakeholder-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  code-and-policy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -e ".[dev]"
+      - name: SAST
+        uses: returntocorp/semgrep-action@v1
+        with: { config: p/python, generateSarif: "1" }
+      - name: Backend tests
+        run: pytest -q
+      - name: OPA compliance policies
+        uses: open-policy-agent/setup-opa@v2
+        with: { version: latest }
+      - run: opa test policies -v
+      - name: Audit integrity contract
+        run: python -m compileall -q services/audit-service stakeholder-integrations
+      - name: Alert and risk API import checks
+        env:
+          PYTHONPATH: shared
+        run: |
+          python -c "from importlib.util import spec_from_file_location, module_from_spec; s=spec_from_file_location('alerts','services/alerting-engine/app/main.py'); m=module_from_spec(s); s.loader.exec_module(m); assert m.app"
+          python -c "from importlib.util import spec_from_file_location, module_from_spec; s=spec_from_file_location('risk','services/risk-engine/app/main.py'); m=module_from_spec(s); s.loader.exec_module(m); assert m.app"
+
+  infrastructure:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive infra/terraform
+      - name: IaC security
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+          framework: terraform,kubernetes
+          quiet: true
+          soft_fail: false
+      - name: Container and filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
+  portal:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: portal/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Dependency gate
+        run: npm audit --audit-level=high
+
+  snyk:
+    if: ${{ secrets.SNYK_TOKEN != '' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: snyk/actions/python@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --severity-threshold=high

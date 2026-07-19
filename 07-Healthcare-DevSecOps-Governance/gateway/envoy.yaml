@@ -1,0 +1,149 @@
+static_resources:
+  listeners:
+    - name: https
+      address: { socket_address: { address: 0.0.0.0, port_value: 8443 } }
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: true
+              common_tls_context:
+                tls_params: { tls_minimum_protocol_version: TLSv1_3 }
+                tls_certificates:
+                  - certificate_chain: { filename: /secrets/tls.crt }
+                    private_key: { filename: /secrets/tls.key }
+                validation_context: { trusted_ca: { filename: /secrets/ca.crt } }
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress
+                request_headers_to_add:
+                  - header: { key: X-Content-Type-Options, value: nosniff }
+                route_config:
+                  name: routes
+                  virtual_hosts:
+                    - name: api
+                      domains: ["api.healthgov.example"]
+                      rate_limits: [{ actions: [{ request_headers: { header_name: x-client-id, descriptor_key: client } }] }]
+                      routes:
+                        - match: { prefix: /phi/ }
+                          route: { cluster: phi, timeout: 5s, prefix_rewrite: / }
+                        - match: { prefix: /compliance/ }
+                          route: { cluster: compliance, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /clinical/ }
+                          route: { cluster: interoperability, timeout: 15s, prefix_rewrite: / }
+                        - match: { prefix: /iomt/ }
+                          route: { cluster: iomt, timeout: 5s, prefix_rewrite: / }
+                        - match: { prefix: /ml/ }
+                          route: { cluster: ml, timeout: 15s, prefix_rewrite: / }
+                        - match: { prefix: /risk/ }
+                          route: { cluster: risk, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /tenants/ }
+                          route: { cluster: tenants, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /plugins/ }
+                          route: { cluster: plugins, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /reports/ }
+                          route: { cluster: reports, timeout: 30s, prefix_rewrite: / }
+                        - match: { prefix: /alerts/ }
+                          route: { cluster: alerts, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /audit/ }
+                          route: { cluster: audit, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /rbac/ }
+                          route: { cluster: rbac, timeout: 5s, prefix_rewrite: / }
+                        - match: { prefix: /data-lake/ }
+                          route: { cluster: data_lake, timeout: 30s, prefix_rewrite: / }
+                        - match: { prefix: /observability/ }
+                          route: { cluster: observability, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /marketplace/ }
+                          route: { cluster: marketplace, timeout: 20s, prefix_rewrite: / }
+                        - match: { prefix: /synthetic/ }
+                          route: { cluster: synthetic, timeout: 30s, prefix_rewrite: / }
+                        - match: { prefix: /compliance-events/ }
+                          route: { cluster: compliance_events, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /dsp/ }
+                          route: { cluster: dsp, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /iso27001/ }
+                          route: { cluster: iso27001, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /soc2/ }
+                          route: { cluster: soc2, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /iomt-security/ }
+                          route: { cluster: iomt_security, timeout: 10s, prefix_rewrite: / }
+                        - match: { prefix: /ingestion/ }
+                          route: { cluster: ingestion, timeout: 30s, prefix_rewrite: / }
+                        - match: { prefix: /data-store/ }
+                          route: { cluster: data_store, timeout: 15s, prefix_rewrite: / }
+                http_filters:
+                  - name: envoy.filters.http.jwt_authn
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+                      providers:
+                        oidc:
+                          issuer: https://auth.example.health/
+                          audiences: [healthgov-api]
+                          remote_jwks: { http_uri: { uri: https://auth.example.health/.well-known/jwks.json, cluster: oidc, timeout: 3s }, cache_duration: 600s }
+                        smart:
+                          issuer: https://ehr.example.health/
+                          audiences: [healthgov-fhir]
+                          remote_jwks: { http_uri: { uri: https://ehr.example.health/.well-known/jwks.json, cluster: smart_oidc, timeout: 3s }, cache_duration: 600s }
+                      rules:
+                        - match: { prefix: /clinical/ }
+                          requires:
+                            requires_any:
+                              requirements:
+                                - provider_name: oidc
+                                - provider_name: smart
+                        - match: { prefix: / }
+                          requires: { provider_name: oidc }
+                  - name: envoy.filters.http.rbac
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC
+                      rules:
+                        action: ALLOW
+                        policies:
+                          authenticated-purpose:
+                            permissions: [{ header: { name: X-Purpose-Of-Use, string_match: { safe_regex: { regex: ".+" } } } }]
+                            principals: [{ authenticated: {} }]
+                  - name: envoy.filters.http.buffer
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.buffer.v3.Buffer
+                      max_request_bytes: 10485760
+                  - name: envoy.filters.http.local_ratelimit
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                      stat_prefix: local_rate_limiter
+                      token_bucket: { max_tokens: 100, tokens_per_fill: 100, fill_interval: 1s }
+                      filter_enabled: { runtime_key: local_rate_limit_enabled, default_value: { numerator: 100, denominator: HUNDRED } }
+                      filter_enforced: { runtime_key: local_rate_limit_enforced, default_value: { numerator: 100, denominator: HUNDRED } }
+                      response_headers_to_add:
+                        - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                          header: { key: x-local-rate-limit, value: "true" }
+                  - name: envoy.filters.http.router
+                    typed_config: { "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router }
+  clusters:
+    - { name: phi, type: STRICT_DNS, load_assignment: { cluster_name: phi, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: phi-classifier, port_value: 8000 } } } }] }] } }
+    - { name: compliance, type: STRICT_DNS, load_assignment: { cluster_name: compliance, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: compliance-engine, port_value: 8000 } } } }] }] } }
+    - { name: interoperability, type: STRICT_DNS, load_assignment: { cluster_name: interoperability, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: interoperability-gateway, port_value: 8000 } } } }] }] } }
+    - { name: iomt, type: STRICT_DNS, load_assignment: { cluster_name: iomt, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: iomt-security-hub, port_value: 8000 } } } }] }] } }
+    - { name: ml, type: STRICT_DNS, load_assignment: { cluster_name: ml, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: ml-security, port_value: 8000 } } } }] }] } }
+    - { name: risk, type: STRICT_DNS, load_assignment: { cluster_name: risk, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: risk-engine, port_value: 8000 } } } }] }] } }
+    - { name: tenants, type: STRICT_DNS, load_assignment: { cluster_name: tenants, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: tenant-service, port_value: 8000 } } } }] }] } }
+    - { name: plugins, type: STRICT_DNS, load_assignment: { cluster_name: plugins, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: plugin-registry, port_value: 8000 } } } }] }] } }
+    - { name: reports, type: STRICT_DNS, load_assignment: { cluster_name: reports, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: reporting-service, port_value: 8000 } } } }] }] } }
+    - { name: alerts, type: STRICT_DNS, load_assignment: { cluster_name: alerts, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: alerting-engine, port_value: 8000 } } } }] }] } }
+    - { name: audit, type: STRICT_DNS, load_assignment: { cluster_name: audit, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: audit-service, port_value: 8000 } } } }] }] } }
+    - { name: rbac, type: STRICT_DNS, load_assignment: { cluster_name: rbac, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: rbac-service, port_value: 8000 } } } }] }] } }
+    - { name: data_lake, type: STRICT_DNS, load_assignment: { cluster_name: data_lake, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: data-lake-connector, port_value: 8000 } } } }] }] } }
+    - { name: observability, type: STRICT_DNS, load_assignment: { cluster_name: observability, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: observability-service, port_value: 8000 } } } }] }] } }
+    - { name: marketplace, type: STRICT_DNS, load_assignment: { cluster_name: marketplace, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: healthcare-marketplace, port_value: 8000 } } } }] }] } }
+    - { name: synthetic, type: STRICT_DNS, load_assignment: { cluster_name: synthetic, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: synthetic-phi-service, port_value: 8000 } } } }] }] } }
+    - { name: compliance_events, type: STRICT_DNS, load_assignment: { cluster_name: compliance_events, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: compliance-event-service, port_value: 8000 } } } }] }] } }
+    - { name: dsp, type: STRICT_DNS, load_assignment: { cluster_name: dsp, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: dsp-toolkit-service, port_value: 8000 } } } }] }] } }
+    - { name: iso27001, type: STRICT_DNS, load_assignment: { cluster_name: iso27001, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: iso27001-service, port_value: 8000 } } } }] }] } }
+    - { name: soc2, type: STRICT_DNS, load_assignment: { cluster_name: soc2, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: soc2-service, port_value: 8000 } } } }] }] } }
+    - { name: iomt_security, type: STRICT_DNS, load_assignment: { cluster_name: iomt_security, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: iomt-security-service, port_value: 8000 } } } }] }] } }
+    - { name: ingestion, type: STRICT_DNS, load_assignment: { cluster_name: ingestion, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: data-ingestion, port_value: 8000 } } } }] }] } }
+    - { name: data_store, type: STRICT_DNS, load_assignment: { cluster_name: data_store, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: data-store, port_value: 8000 } } } }] }] } }
+    - { name: oidc, type: LOGICAL_DNS, transport_socket: { name: envoy.transport_sockets.tls, typed_config: { "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext, sni: auth.example.health } }, load_assignment: { cluster_name: oidc, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: auth.example.health, port_value: 443 } } } }] }] } }
+    - { name: smart_oidc, type: LOGICAL_DNS, transport_socket: { name: envoy.transport_sockets.tls, typed_config: { "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext, sni: ehr.example.health } }, load_assignment: { cluster_name: smart_oidc, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: ehr.example.health, port_value: 443 } } } }] }] } }

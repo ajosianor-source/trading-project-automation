@@ -1,0 +1,22 @@
+model_security:
+  accepted_formats: [safetensors, onnx]
+  prohibited_formats: [pickle, joblib, torch-pickle]
+  require:
+    - sha256
+    - signature
+    - model-card
+    - dataset-card
+    - dependency-sbom
+    - intended-use
+    - subgroup-validation
+  scanners:
+    - modelscan
+    - fickling
+    - trivy
+    - garak
+  block:
+    unsafe_deserialization: true
+    embedded_code: true
+    critical_dependency_vulnerability: true
+    missing_provenance: true
+

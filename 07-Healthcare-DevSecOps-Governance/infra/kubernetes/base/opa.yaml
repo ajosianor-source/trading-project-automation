@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: opa, namespace: healthgov }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: opa } }
+  template:
+    metadata: { labels: { app: opa } }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: opa
+          image: openpolicyagent/opa:1.5.1-static
+          # Production publishes a signed, immutable OPA bundle from the policy pipeline.
+          args: ["run", "--server", "--addr=0.0.0.0:8181", "--bundle", "https://policies.example.health/healthgov/bundle.tar.gz"]
+          ports: [{ name: http, containerPort: 8181 }]
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: opa, namespace: healthgov }
+spec: { selector: { app: opa }, ports: [{ port: 8181, targetPort: http }] }

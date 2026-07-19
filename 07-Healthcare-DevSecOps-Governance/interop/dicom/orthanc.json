@@ -1,0 +1,20 @@
+{
+  "Name": "HealthGov DICOM Quarantine",
+  "AuthenticationEnabled": true,
+  "RemoteAccessAllowed": false,
+  "SslEnabled": true,
+  "SslMinimumProtocolVersion": 4,
+  "DicomTlsEnabled": true,
+  "DicomAlwaysAllowEcho": false,
+  "DicomAlwaysAllowStore": false,
+  "MaximumStorageSize": 10240,
+  "MaximumPatientCount": 1000,
+  "StorageCompression": true,
+  "StableAge": 60,
+  "LuaScripts": ["/etc/orthanc/anonymize.lua"],
+  "HttpHeaders": {
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "X-Content-Type-Options": "nosniff"
+  }
+}
+

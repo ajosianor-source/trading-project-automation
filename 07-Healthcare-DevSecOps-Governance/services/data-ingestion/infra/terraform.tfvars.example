@@ -1,0 +1,5 @@
+ingestion_enabled      = true
+ingestion_scripts_path = ".."
+railway_project_id     = "replace-with-railway-project-id"
+vercel_project_id      = "replace-with-vercel-project-id"
+python_executable      = ".venv\\Scripts\\python.exe"

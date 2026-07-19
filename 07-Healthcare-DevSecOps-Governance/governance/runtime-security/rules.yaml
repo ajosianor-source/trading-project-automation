@@ -1,0 +1,20 @@
+- rule: Unauthorized Outbound Connection from Data Store
+  desc: Detect any outbound network connection from the data-store container to untrusted external IPs.
+  condition: container.name == "data-store" and outbound and not fd.sip in (127.0.0.1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+  output: "Unauthorized outbound connection detected from data-store container (src_ip=%fd.sip, dest_ip=%fd.dip, port=%fd.dport)"
+  priority: CRITICAL
+  tags: [network, data-store, compliance, hipaa]
+
+- rule: Write to Read-Only Directory
+  desc: Detect any write attempt to read-only application directories (e.g., /app, /usr, /bin).
+  condition: open_write and (evt.arg.filepath startswith "/app" or evt.arg.filepath startswith "/usr" or evt.arg.filepath startswith "/bin") and not proc.name in (pip, poetry, dpkg, apt)
+  output: "Unauthorized write attempt to read-only directory (user=%user.name, proc=%proc.name, file=%evt.arg.filepath)"
+  priority: HIGH
+  tags: [filesystem, integrity, compliance, soc2]
+
+- rule: Spawning Unexpected Shell or Package Manager in Production
+  desc: Detect spawning of shells or package managers (pip, apk, apt, npm) in production containers.
+  condition: spawned_process and proc.name in (sh, bash, zsh, ash, pip, apk, apt, apt-get, npm, yarn) and container.id != "host"
+  output: "Suspicious process spawned in production container (user=%user.name, proc=%proc.name, parent=%proc.pname, container_id=%container.id)"
+  priority: CRITICAL
+  tags: [process, intrusion, compliance, iso27001]

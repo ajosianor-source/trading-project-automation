@@ -1,0 +1,5 @@
+# Each device may publish only to its own telemetry namespace.
+pattern write iomt/%u/telemetry
+pattern read iomt/%u/commands
+pattern read iomt/%u/firmware/manifest
+

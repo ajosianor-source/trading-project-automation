@@ -1,0 +1,69 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny, namespace: healthgov }
+spec: { podSelector: {}, policyTypes: [Ingress, Egress] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-phi-classifier, namespace: healthgov }
+spec:
+  podSelector: { matchLabels: { app: phi-classifier } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: gateway } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
+      ports: [{ protocol: UDP, port: 53 }]
+    - to: [{ podSelector: { matchLabels: { app: audit-service } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-clinical-data-plane, namespace: healthgov }
+spec:
+  podSelector: { matchLabels: { tier: data-plane } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: gateway } }
+        - podSelector: { matchLabels: { tier: data-plane } }
+      ports: [{ protocol: TCP, port: 8000 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to: [{ podSelector: { matchLabels: { app: kafka } } }]
+      ports: [{ protocol: TCP, port: 9093 }]
+    - to: [{ podSelector: { matchLabels: { app: postgres } } }]
+      ports: [{ protocol: TCP, port: 5432 }]
+    - to: [{ podSelector: { matchLabels: { app: opa } } }]
+      ports: [{ protocol: TCP, port: 8181 }]
+    - to: [{ podSelector: { matchLabels: { app: audit-service } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
+    - to: [{ podSelector: { matchLabels: { app: hapi-fhir } } }]
+      ports: [{ protocol: TCP, port: 8080 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-governance-services, namespace: healthgov }
+spec:
+  podSelector: { matchLabels: { tier: governance } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: gateway } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to: [{ podSelector: { matchLabels: { app: postgres } } }]
+      ports: [{ protocol: TCP, port: 5432 }]
+    - to: [{ podSelector: { matchLabels: { app: opa } } }]
+      ports: [{ protocol: TCP, port: 8181 }]
+    - to: [{ podSelector: { matchLabels: { app: audit-service } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
+    - to: [{ podSelector: { matchLabels: { app: kafka } } }]
+      ports: [{ protocol: TCP, port: 9093 }]

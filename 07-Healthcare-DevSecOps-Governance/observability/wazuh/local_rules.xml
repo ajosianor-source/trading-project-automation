@@ -1,0 +1,18 @@
+<group name="healthgov,hipaa,gdpr">
+  <rule id="110001" level="12" frequency="5" timeframe="300">
+    <decoded_as>json</decoded_as>
+    <field name="event">phi_access</field>
+    <field name="outcome">denied</field>
+    <description>Repeated denied PHI access</description>
+    <mitre><id>T1078</id></mitre>
+    <group>hipaa_access_control,gdpr_security,</group>
+  </rule>
+  <rule id="110002" level="14">
+    <decoded_as>json</decoded_as>
+    <field name="action">export</field>
+    <field name="outcome">success</field>
+    <description>PHI bulk export requires privacy review</description>
+    <group>hipaa_audit,gdpr_exfiltration,</group>
+  </rule>
+</group>
+

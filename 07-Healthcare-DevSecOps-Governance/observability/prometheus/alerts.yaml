@@ -1,0 +1,68 @@
+groups:
+  - name: healthgov-security
+    rules:
+      - alert: ElevatedDeniedPHIAccess
+        expr: sum(rate(phi_access_total{outcome="denied"}[5m])) > 0.2
+        for: 10m
+        labels: { severity: critical, team: security }
+        annotations: { summary: "Elevated denied PHI access", runbook: "docs/runbooks.md#denied-phi-access" }
+      - alert: AuditPipelineUnavailable
+        expr: up{job="audit-service"} == 0
+        for: 2m
+        labels: { severity: critical, team: security }
+        annotations: { summary: "PHI audit pipeline unavailable", runbook: "docs/runbooks.md#audit-outage" }
+      - alert: OPAEvaluationFailures
+        expr: sum(rate(http_requests_total{service="compliance-engine",status=~"5.."}[5m])) > 0.05
+        for: 5m
+        labels: { severity: high, team: platform }
+        annotations: { summary: "OPA decision failures", runbook: "docs/runbooks.md#opa-outage" }
+      - alert: UntrustedMedicalDevice
+        expr: sum(iomt_device_trust{trusted="false"}) > 0
+        for: 1m
+        labels: { severity: critical, team: clinical-engineering }
+        annotations: { summary: "Untrusted medical device is attempting connectivity", runbook: "docs/playbooks/IOMT-INCIDENT.md" }
+      - alert: ClinicalInterfaceDeadLetterGrowth
+        expr: increase(kafka_topic_partition_current_offset{topic=~"clinical.*dlq.*"}[15m]) > 10
+        for: 5m
+        labels: { severity: high, team: interoperability }
+        annotations: { summary: "Clinical messages are accumulating in a dead-letter queue", runbook: "docs/runbooks.md#clinical-interface-failure" }
+      - alert: ClinicalModelDrift
+        expr: max(clinical_model_drift_score) > 0.15
+        for: 15m
+        labels: { severity: critical, team: clinical-safety }
+        annotations: { summary: "Clinical model drift exceeds approved threshold", runbook: "docs/runbooks.md#clinical-model-drift" }
+      - alert: AuthenticationFailureBurst
+        expr: sum(rate(http_requests_total{status=~"401|403"}[5m])) > 2
+        for: 5m
+        labels: { severity: high, team: security }
+        annotations: { summary: "Authentication or authorization failure burst", runbook: "docs/runbooks.md#credential-attack" }
+      - alert: IngestionServiceNotReady
+        expr: up{job="data-ingestion"} == 0
+        for: 2m
+        labels: { severity: critical, team: data-platform }
+        annotations: { summary: "Clinical ingestion service is unavailable", runbook: "docs/runbooks.md#clinical-interface-failure" }
+      - alert: HealthcareAPIErrorBudgetBurn
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels: { severity: critical, team: platform }
+        annotations: { summary: "API error budget is burning rapidly", runbook: "docs/operations/SLO.md" }
+      - alert: AuditIntegrityFailure
+        expr: increase(audit_chain_verification_failures_total[5m]) > 0
+        for: 0m
+        labels: { severity: critical, team: security }
+        annotations: { summary: "Tamper-evident audit chain verification failed", runbook: "docs/runbooks.md#audit-integrity-failure" }
+      - alert: PolicyDenialSpike
+        expr: sum(rate(opa_decisions_total{result="deny"}[5m])) > 1
+        for: 5m
+        labels: { severity: high, team: security }
+        annotations: { summary: "OPA denial rate is elevated", runbook: "docs/runbooks.md#policy-denial-spike" }
+      - alert: TenantBoundaryViolation
+        expr: increase(tenant_boundary_denials_total[5m]) > 0
+        for: 0m
+        labels: { severity: critical, team: security }
+        annotations: { summary: "A cross-tenant access attempt was blocked", runbook: "docs/runbooks.md#tenant-boundary-violation" }
+      - alert: IngestionRoutingFailure
+        expr: sum(rate(ingestion_http_requests_total{status=~"5.."}[5m])) > 0.05
+        for: 5m
+        labels: { severity: high, team: data-platform }
+        annotations: { summary: "Healthcare ingestion failures are elevated", runbook: "docs/runbooks.md#clinical-interface-failure" }

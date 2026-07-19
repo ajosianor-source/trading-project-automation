@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: List
+items:
+  - &deployment
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata: { name: synthetic-phi-service, namespace: healthgov }
+    spec: &deployment_spec
+      replicas: 2
+      selector: { matchLabels: { app: synthetic-phi-service } }
+      template: &pod_template
+        metadata: { labels: { app: synthetic-phi-service, tier: governance } }
+        spec: &pod_spec
+          serviceAccountName: healthgov-runtime
+          automountServiceAccountToken: false
+          securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - &container
+              name: app
+              image: ghcr.io/example/healthgov/synthetic-phi-service:IMAGE_TAG
+              ports: [{ name: http, containerPort: 8000 }]
+              envFrom: [{ configMapRef: { name: healthgov-config } }]
+              resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
+              readinessProbe: { httpGet: { path: /healthz, port: http } }
+              livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15 }
+              securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+              volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          volumes: [{ name: tmp, emptyDir: { sizeLimit: 64Mi } }]
+  - <<: *deployment
+    metadata: { name: compliance-event-service, namespace: healthgov }
+    spec:
+      <<: *deployment_spec
+      selector: { matchLabels: { app: compliance-event-service } }
+      template:
+        <<: *pod_template
+        metadata: { labels: { app: compliance-event-service, tier: governance } }
+        spec:
+          <<: *pod_spec
+          containers: [{ <<: *container, image: ghcr.io/example/healthgov/compliance-event-service:IMAGE_TAG }]
+  - <<: *deployment
+    metadata: { name: dsp-toolkit-service, namespace: healthgov }
+    spec:
+      <<: *deployment_spec
+      selector: { matchLabels: { app: dsp-toolkit-service } }
+      template:
+        <<: *pod_template
+        metadata: { labels: { app: dsp-toolkit-service, tier: governance } }
+        spec:
+          <<: *pod_spec
+          containers: [{ <<: *container, image: ghcr.io/example/healthgov/dsp-toolkit-service:IMAGE_TAG }]
+  - <<: *deployment
+    metadata: { name: iso27001-service, namespace: healthgov }
+    spec:
+      <<: *deployment_spec
+      selector: { matchLabels: { app: iso27001-service } }
+      template:
+        <<: *pod_template
+        metadata: { labels: { app: iso27001-service, tier: governance } }
+        spec:
+          <<: *pod_spec
+          containers: [{ <<: *container, image: ghcr.io/example/healthgov/iso27001-service:IMAGE_TAG }]
+  - <<: *deployment
+    metadata: { name: soc2-service, namespace: healthgov }
+    spec:
+      <<: *deployment_spec
+      selector: { matchLabels: { app: soc2-service } }
+      template:
+        <<: *pod_template
+        metadata: { labels: { app: soc2-service, tier: governance } }
+        spec:
+          <<: *pod_spec
+          containers: [{ <<: *container, image: ghcr.io/example/healthgov/soc2-service:IMAGE_TAG }]
+  - <<: *deployment
+    metadata: { name: iomt-security-service, namespace: healthgov }
+    spec:
+      <<: *deployment_spec
+      selector: { matchLabels: { app: iomt-security-service } }
+      template:
+        <<: *pod_template
+        metadata: { labels: { app: iomt-security-service, tier: governance } }
+        spec:
+          <<: *pod_spec
+          containers: [{ <<: *container, image: ghcr.io/example/healthgov/iomt-security-service:IMAGE_TAG }]
+  - &service
+    apiVersion: v1
+    kind: Service
+    metadata: { name: synthetic-phi-service, namespace: healthgov }
+    spec: { selector: { app: synthetic-phi-service }, ports: [{ name: http, port: 8000 }] }
+  - <<: *service
+    metadata: { name: compliance-event-service, namespace: healthgov }
+    spec: { selector: { app: compliance-event-service }, ports: [{ name: http, port: 8000 }] }
+  - <<: *service
+    metadata: { name: dsp-toolkit-service, namespace: healthgov }
+    spec: { selector: { app: dsp-toolkit-service }, ports: [{ name: http, port: 8000 }] }
+  - <<: *service
+    metadata: { name: iso27001-service, namespace: healthgov }
+    spec: { selector: { app: iso27001-service }, ports: [{ name: http, port: 8000 }] }
+  - <<: *service
+    metadata: { name: soc2-service, namespace: healthgov }
+    spec: { selector: { app: soc2-service }, ports: [{ name: http, port: 8000 }] }
+  - <<: *service
+    metadata: { name: iomt-security-service, namespace: healthgov }
+    spec: { selector: { app: iomt-security-service }, ports: [{ name: http, port: 8000 }] }

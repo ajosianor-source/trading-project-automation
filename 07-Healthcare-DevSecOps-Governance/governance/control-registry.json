@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "controls": [
+    {"framework":"HIPAA","control_id":"164.312(a)(1)","title":"Access control","owner_role":"security_owner","evidence_source":"IdP role export and RBAC decision logs","frequency":"P1D","retention_days":2555,"remediation_sla_hours":24},
+    {"framework":"HIPAA","control_id":"164.312(b)","title":"Audit controls","owner_role":"security_owner","evidence_source":"Immutable audit chain verification","frequency":"PT1H","retention_days":2555,"remediation_sla_hours":4},
+    {"framework":"GDPR","control_id":"Art.5","title":"Purpose limitation and minimisation","owner_role":"data_protection_officer","evidence_source":"Purpose policy decisions and data catalogue","frequency":"P1D","retention_days":2190,"remediation_sla_hours":24},
+    {"framework":"GDPR","control_id":"Art.32","title":"Security of processing","owner_role":"security_owner","evidence_source":"Security pipeline and encryption inventory","frequency":"P1D","retention_days":2190,"remediation_sla_hours":24},
+    {"framework":"NHS_DSPT","control_id":"1.3.1","title":"Data security and protection training","owner_role":"compliance_owner","evidence_source":"Learning system completion export","frequency":"P7D","retention_days":2555,"remediation_sla_hours":168},
+    {"framework":"NHS_DSPT","control_id":"10.1","title":"Unsupported systems and patching","owner_role":"platform_owner","evidence_source":"Asset inventory and vulnerability scanner","frequency":"P1D","retention_days":2555,"remediation_sla_hours":24},
+    {"framework":"ISO27001","control_id":"A.5.15","title":"Access control","owner_role":"security_owner","evidence_source":"IdP and PIM export","frequency":"P1D","retention_days":2555,"remediation_sla_hours":24},
+    {"framework":"ISO27001","control_id":"A.8.15","title":"Logging","owner_role":"soc_owner","evidence_source":"SIEM ingestion and audit continuity","frequency":"PT1H","retention_days":2555,"remediation_sla_hours":4},
+    {"framework":"SOC2","control_id":"CC6.1","title":"Logical access","owner_role":"security_owner","evidence_source":"RBAC tests and access certification","frequency":"P1D","retention_days":2555,"remediation_sla_hours":24},
+    {"framework":"SOC2","control_id":"CC7.2","title":"Monitoring anomalies","owner_role":"soc_owner","evidence_source":"Alert coverage and incident records","frequency":"PT1H","retention_days":2555,"remediation_sla_hours":4},
+    {"framework":"FDA_21_CFR_11","control_id":"11.10(e)","title":"Secure time-stamped audit trails","owner_role":"quality_owner","evidence_source":"Audit-chain verification and time-sync status","frequency":"PT1H","retention_days":3650,"remediation_sla_hours":4},
+    {"framework":"ISO13485","control_id":"4.2.5","title":"Control of records","owner_role":"quality_owner","evidence_source":"Signed release and design-history records","frequency":"P1D","retention_days":3650,"remediation_sla_hours":72},
+    {"framework":"ISO14971","control_id":"7","title":"Risk control","owner_role":"clinical_safety_officer","evidence_source":"Risk register and verification results","frequency":"P1D","retention_days":3650,"remediation_sla_hours":24}
+  ]
+}

@@ -1,0 +1,35 @@
+global:
+  resolve_timeout: 5m
+route:
+  receiver: soc-default
+  group_by: [alertname, tenant_id, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: pagerduty-critical
+      repeat_interval: 30m
+    - matchers: [team="privacy"]
+      receiver: privacy-teams
+receivers:
+  - name: soc-default
+    webhook_configs:
+      - url_file: /run/secrets/incident-router-url
+        send_resolved: true
+  - name: pagerduty-critical
+    pagerduty_configs:
+      - routing_key_file: /run/secrets/pagerduty-routing-key
+        severity: critical
+        send_resolved: true
+    webhook_configs:
+      - url_file: /run/secrets/incident-router-url
+        send_resolved: true
+  - name: privacy-teams
+    msteamsv2_configs:
+      - webhook_url_file: /run/secrets/privacy-teams-webhook
+        send_resolved: true
+inhibit_rules:
+  - source_matchers: [alertname="AuditPipelineUnavailable"]
+    target_matchers: [service="audit-service"]
+    equal: [tenant_id]

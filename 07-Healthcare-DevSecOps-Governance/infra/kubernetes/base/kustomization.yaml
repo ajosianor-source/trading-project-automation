@@ -1,0 +1,3 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [namespace.yaml, services.yaml, platform-services.yaml, data-plane.yaml, governance-modules.yaml, opa.yaml, network-policy.yaml, autoscaling.yaml, external-secrets.yaml, service-mesh.yaml, gatekeeper-policies.yaml]

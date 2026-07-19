@@ -1,0 +1,49 @@
+name: Controlled production pilot security
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha: { description: "Full immutable commit SHA", required: true }
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  adversarial:
+    environment: staging-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -e ".[dev]"
+      - run: mkdir -p evidence
+      - run: pytest -q tests --junitxml=evidence/platform-security.xml
+      - name: Ingestion security tests
+        working-directory: services/data-ingestion
+        run: |
+          python -m pip install -e ".[dev]"
+          pytest -q --junitxml=../../evidence/ingestion-security.xml
+      - name: Data-store security tests
+        working-directory: services/data-store
+        run: |
+          python -m pip install -r requirements-dev.txt
+          pytest -q --junitxml=../../evidence/data-store-security.xml
+      - name: OPA deployment and healthcare policies
+        run: docker run --rm -v "$PWD/policies:/policies:ro" openpolicyagent/opa:1.5.1-static test /policies --format=json > evidence/opa.json
+      - name: API abuse and rate-limit test
+        env: { STAGING_API_URL: "${{ vars.STAGING_API_URL }}" }
+        run: docker run --rm -e STAGING_API_URL -v "$PWD/tests/load:/scripts:ro" -v "$PWD/evidence:/evidence" grafana/k6:0.54.0 run /scripts/api-rate-limit.js --summary-export=/evidence/k6.json
+      - name: DAST
+        run: docker run --rm -t -v "$PWD/evidence:/zap/wrk:rw" owasp/zap2docker-stable:2.15.0 zap-baseline.py -t "${{ vars.STAGING_PORTAL_URL }}" -J zap.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: pilot-security-evidence, path: evidence/, retention-days: 365 }
+  production-gate:
+    needs: adversarial
+    environment: production-governance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/production_readiness.py --image-tag "${{ inputs.release_sha }}"
+      - name: Verify signed pilot evidence manifest
+        run: python scripts/verify_pilot_evidence.py "${{ vars.PILOT_EVIDENCE_MANIFEST }}"

@@ -1,0 +1,35 @@
+name: Medical device firmware gate
+on:
+  workflow_dispatch:
+    inputs:
+      artifact: { description: "Firmware artifact path", required: true }
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.30.0
+        with:
+          scan-type: filesystem
+          scan-ref: "${{ inputs.artifact }}"
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          scanners: vuln,secret,misconfig
+      - name: Generate firmware SBOM
+        uses: anchore/sbom-action@v0.17.2
+        with:
+          path: "${{ inputs.artifact }}"
+          format: cyclonedx-json
+          output-file: firmware-sbom.cdx.json
+      - uses: sigstore/cosign-installer@v3
+      - name: Verify manufacturer or release signature
+        run: cosign verify-blob --certificate firmware.pem --signature firmware.sig "${{ inputs.artifact }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-regulatory-evidence
+          path: firmware-sbom.cdx.json
+          retention-days: 90
+

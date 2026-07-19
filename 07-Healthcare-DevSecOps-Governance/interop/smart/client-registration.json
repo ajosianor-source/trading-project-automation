@@ -1,0 +1,12 @@
+{
+  "client_name": "HealthGov Clinical Governance",
+  "redirect_uris": ["https://portal.healthgov.example/smart/callback"],
+  "grant_types": ["authorization_code"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "private_key_jwt",
+  "scope": "openid fhirUser launch patient/*.rs offline_access",
+  "jwks_uri": "https://portal.healthgov.example/.well-known/jwks.json",
+  "software_statement_required": true,
+  "pkce_required": true
+}
+

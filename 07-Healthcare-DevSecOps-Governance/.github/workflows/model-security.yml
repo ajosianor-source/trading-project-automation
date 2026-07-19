@@ -1,0 +1,44 @@
+name: Clinical model security gate
+on:
+  workflow_dispatch:
+    inputs:
+      model_path: { description: "Model artifact path", required: true }
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  model-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install modelscan==0.8.1 fickling==0.1.3
+      - name: Reject unsafe serialization and embedded code
+        run: |
+          modelscan -p "${{ inputs.model_path }}"
+          case "${{ inputs.model_path }}" in
+            *.pkl|*.pickle|*.joblib) echo "Unsafe model format"; exit 1 ;;
+          esac
+      - uses: aquasecurity/trivy-action@0.30.0
+        with:
+          scan-type: filesystem
+          scan-ref: "${{ inputs.model_path }}"
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+      - uses: anchore/sbom-action@v0.17.2
+        with:
+          path: "${{ inputs.model_path }}"
+          format: cyclonedx-json
+          output-file: model-sbom.cdx.json
+      - uses: sigstore/cosign-installer@v3
+      - run: cosign sign-blob --yes --bundle model.bundle "${{ inputs.model_path }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-model-evidence
+          path: |
+            model.bundle
+            model-sbom.cdx.json
+          retention-days: 90
+

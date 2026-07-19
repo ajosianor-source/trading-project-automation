@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: phi-classifier, namespace: healthgov }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: phi-classifier } }
+  template:
+    metadata: { labels: { app: phi-classifier } }
+    spec:
+      serviceAccountName: healthgov-runtime
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: app
+          image: ghcr.io/example/healthgov/phi-classifier:IMAGE_TAG
+          ports: [{ name: http, containerPort: 8000 }]
+          envFrom: [{ configMapRef: { name: healthgov-config } }]
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: { sizeLimit: 32Mi } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: phi-classifier, namespace: healthgov }
+spec: { selector: { app: phi-classifier }, ports: [{ name: http, port: 8000, targetPort: http }] }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: healthgov-runtime
+  namespace: healthgov
+  annotations: { eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/healthgov-runtime }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: healthgov-config, namespace: healthgov }
+data:
+  ENVIRONMENT: production
+  OPA_URL: http://opa:8181
+  AUDIT_SERVICE_URL: http://audit-service:8000
+  KAFKA_ENABLED: "true"
+  KAFKA_SECURITY_PROTOCOL: SASL_SSL
+  HAPI_FHIR_BASE_URL: http://hapi-fhir:8080/fhir
+  JWT_AUDIENCE: healthgov-api
+  JWT_ISSUER: https://login.microsoftonline.com/REPLACE_TENANT_ID/v2.0
+  JWKS_URL: https://login.microsoftonline.com/REPLACE_TENANT_ID/discovery/v2.0/keys

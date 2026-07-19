@@ -1,0 +1,193 @@
+name: Healthcare ingestion
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Stagger away from the top of the hour to reduce shared-runner contention.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      live_ingestion:
+        description: "Run approved live pipelines on the hardened self-hosted runner"
+        required: false
+        default: false
+        type: boolean
+      deploy_railway:
+        description: "Deploy the validated ingestion service to Railway"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ingestion-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  SERVICE_DIR: services/data-ingestion
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  # Public runners use generated data only. Never copy live PHI or MIMIC data
+  # into GitHub Actions artifacts, caches, logs, or hosted workspaces.
+  validate-and-exercise:
+    name: Validate and exercise every adapter
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ${{ env.SERVICE_DIR }}
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: services/data-ingestion/pyproject.toml
+
+      - name: Install pinned dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Prepare redacted logs
+        run: mkdir -p ingestion-logs
+
+      - name: Run Synthea ingestion
+        run: |
+          set -Eeuo pipefail
+          python synthea_ingest.py 2>&1 | tee ingestion-logs/synthea.log
+
+      - name: Run FHIR ingestion
+        run: |
+          set -Eeuo pipefail
+          python fhir_stream.py 2>&1 | tee ingestion-logs/fhir.log
+
+      - name: Run HL7 v2 ingestion
+        run: |
+          set -Eeuo pipefail
+          python hl7_ingest.py 2>&1 | tee ingestion-logs/hl7.log
+
+      - name: Run DICOM ingestion
+        run: |
+          set -Eeuo pipefail
+          python dicom_ingest.py 2>&1 | tee ingestion-logs/dicom.log
+
+      - name: Run IoMT telemetry simulation
+        run: |
+          set -Eeuo pipefail
+          python iomt_simulator.py 2>&1 | tee ingestion-logs/iomt.log
+
+      - name: Run MIMIC-shaped ICU ingestion
+        run: |
+          set -Eeuo pipefail
+          python mimic_ingest.py 2>&1 | tee ingestion-logs/mimic.log
+
+      - name: Run tests and lint
+        run: |
+          set -Eeuo pipefail
+          ruff check app tests *.py
+          pytest -q
+
+      - name: Publish execution summary
+        if: always()
+        run: |
+          {
+            echo "## Healthcare ingestion validation"
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Trigger: \`${GITHUB_EVENT_NAME}\`"
+            echo "- Python: \`${PYTHON_VERSION}\`"
+            echo "- Adapters: Synthea, FHIR, HL7 v2, DICOM, IoMT, MIMIC-shaped ICU"
+            echo "- Data policy: generated fixtures only"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload redacted adapter logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingestion-adapter-logs-${{ github.run_id }}
+          path: services/data-ingestion/ingestion-logs/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Real ingestion is opt-in and restricted to a controlled runner inside the
+  # approved healthcare network. Add the `healthcare-ingestion` label only to
+  # a hardened ephemeral runner with encrypted local storage and egress policy.
+  live-ingestion:
+    name: Run approved live ingestion
+    needs: validate-and-exercise
+    if: >-
+      (github.event_name == 'schedule' && vars.ENABLE_LIVE_INGESTION == 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.live_ingestion)
+    runs-on: [self-hosted, linux, x64, healthcare-ingestion]
+    timeout-minutes: 120
+    environment: healthcare-ingestion
+    defaults:
+      run:
+        working-directory: ${{ env.SERVICE_DIR }}
+        shell: bash
+    env:
+      DATABASE_URL: ${{ secrets.INGESTION_DATABASE_URL }}
+      KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.INGESTION_KAFKA_BOOTSTRAP_SERVERS }}
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SSL_CAFILE: ${{ vars.INGESTION_KAFKA_CA_PATH }}
+      HAPI_FHIR_BASE_URL: ${{ vars.HAPI_FHIR_BASE_URL }}
+      HAPI_FHIR_TOKEN: ${{ secrets.HAPI_FHIR_TOKEN }}
+      TOKENIZATION_SECRET: ${{ secrets.INGESTION_TOKENIZATION_SECRET }}
+      SYNTHEA_OUTPUT_DIR: ${{ vars.SYNTHEA_OUTPUT_DIR }}
+      MIMIC_DATA_DIR: ${{ vars.MIMIC_DATA_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: services/data-ingestion/pyproject.toml
+
+      - name: Install ingestion service
+        run: python -m pip install .
+
+      - name: Run concurrent live pipelines
+        run: |
+          set -Eeuo pipefail
+          python ingestion_orchestrator.py \
+            --tenant "${{ vars.INGESTION_TENANT_ID }}" \
+            --pipelines synthea fhir iomt mimic
+
+  deploy-railway:
+    name: Deploy ingestion service to Railway
+    needs: validate-and-exercise
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_railway)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    defaults:
+      run:
+        working-directory: ${{ env.SERVICE_DIR }}
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+
+      - name: Install pinned Railway CLI
+        run: npm install --global @railway/cli@5.26.2
+
+      - name: Deploy validated service
+        run: railway up --service ingestion
+

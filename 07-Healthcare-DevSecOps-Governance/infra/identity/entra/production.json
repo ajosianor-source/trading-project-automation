@@ -1,0 +1,20 @@
+{
+  "provider": "microsoft-entra-id",
+  "authorization_endpoint": "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize",
+  "token_endpoint": "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token",
+  "jwks_uri": "https://login.microsoftonline.com/${TENANT_ID}/discovery/v2.0/keys",
+  "issuer": "https://login.microsoftonline.com/${TENANT_ID}/v2.0",
+  "client_id": "${PORTAL_CLIENT_ID}",
+  "audience": "api://${API_CLIENT_ID}",
+  "response_type": "code",
+  "grant_type": "authorization_code",
+  "pkce": { "required": true, "method": "S256" },
+  "access_token_minutes": 10,
+  "refresh_token_browser_storage": false,
+  "required_authentication_strength": "phishing-resistant",
+  "required_claims": ["sub", "tid", "roles", "acr", "auth_time"],
+  "smart_scopes": [
+    "openid", "profile", "fhirUser", "launch", "launch/patient",
+    "patient/*.read", "user/*.read"
+  ]
+}

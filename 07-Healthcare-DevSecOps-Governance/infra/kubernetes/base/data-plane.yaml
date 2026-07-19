@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: data-ingestion, namespace: healthgov }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: data-ingestion } }
+  template:
+    metadata: { labels: { app: data-ingestion, tier: data-plane } }
+    spec:
+      serviceAccountName: healthgov-runtime
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: app
+          image: ghcr.io/example/healthgov/data-ingestion:IMAGE_TAG
+          ports: [{ name: http, containerPort: 8000 }]
+          envFrom:
+            - { configMapRef: { name: healthgov-config } }
+            - { secretRef: { name: healthgov-runtime-secrets } }
+          resources: { requests: { cpu: 250m, memory: 256Mi }, limits: { cpu: "1", memory: 1Gi } }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 20 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: { sizeLimit: 256Mi } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: data-store, namespace: healthgov }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: data-store } }
+  template:
+    metadata: { labels: { app: data-store, tier: data-plane } }
+    spec:
+      serviceAccountName: healthgov-runtime
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: app
+          image: ghcr.io/example/healthgov/data-store:IMAGE_TAG
+          ports: [{ name: http, containerPort: 8000 }]
+          env:
+            - { name: KAFKA_ENABLED, value: "true" }
+          envFrom:
+            - { configMapRef: { name: healthgov-config } }
+            - { secretRef: { name: data-store-secrets } }
+          resources: { requests: { cpu: 250m, memory: 256Mi }, limits: { cpu: "1", memory: 1Gi } }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 20 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: { sizeLimit: 64Mi } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: data-ingestion, namespace: healthgov }
+spec: { selector: { app: data-ingestion }, ports: [{ name: http, port: 8000, targetPort: http }] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: data-store, namespace: healthgov }
+spec: { selector: { app: data-store }, ports: [{ name: http, port: 8000, targetPort: http }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: data-store, namespace: healthgov }
+spec: { minAvailable: 2, selector: { matchLabels: { app: data-store } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: data-store, namespace: healthgov }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: data-store }
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }

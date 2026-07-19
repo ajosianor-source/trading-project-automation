@@ -1,0 +1,22 @@
+{
+  "resourceType": "CapabilityStatement",
+  "id": "healthgov-r4",
+  "status": "active",
+  "date": "2026-07-17",
+  "kind": "instance",
+  "fhirVersion": "4.0.1",
+  "format": ["json"],
+  "rest": [{
+    "mode": "server",
+    "security": {
+      "cors": false,
+      "service": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/restful-security-service", "code": "SMART-on-FHIR"}]}]
+    },
+    "resource": [
+      {"type": "Patient", "interaction": [{"code": "read"}, {"code": "search-type"}]},
+      {"type": "Observation", "interaction": [{"code": "read"}, {"code": "search-type"}, {"code": "create"}]},
+      {"type": "Condition", "interaction": [{"code": "read"}, {"code": "search-type"}]}
+    ]
+  }]
+}
+

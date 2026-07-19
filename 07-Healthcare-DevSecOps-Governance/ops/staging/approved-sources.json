@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "environment": "staging",
+  "phi_permitted": false,
+  "sources": [
+    {
+      "id": "synthea",
+      "version": "current-approved-build",
+      "classification": "synthetic",
+      "license": "Apache-2.0",
+      "approved": true,
+      "loader": "hapi-fhir"
+    },
+    {
+      "id": "physionet-bidmc",
+      "version": "1.0.0",
+      "classification": "public_deidentified",
+      "doi": "10.13026/C2208R",
+      "license": "ODC-By-1.0",
+      "attribution": "Pimentel et al.; PhysioNet BIDMC PPG and Respiration Dataset",
+      "approved": true,
+      "download_url": "https://physionet.org/files/bidmc/1.0.0/"
+    },
+    {
+      "id": "tcia-tcga-luad",
+      "version": "4",
+      "classification": "public_deidentified",
+      "doi": "10.7937/K9/TCIA.2016.JGNIHEP5",
+      "license": "TCIA Data Usage Policy and collection attribution requirements",
+      "attribution": "Albertina et al., TCGA-LUAD Version 4, The Cancer Imaging Archive",
+      "approved": true,
+      "collection": "TCGA-LUAD"
+    },
+    {
+      "id": "mimic-iv",
+      "classification": "controlled_research",
+      "license": "PhysioNet Credentialed Health Data DUA",
+      "approved": false,
+      "blocked_reason": "Credentialing, training, DUA and governance approval are incomplete"
+    }
+  ]
+}

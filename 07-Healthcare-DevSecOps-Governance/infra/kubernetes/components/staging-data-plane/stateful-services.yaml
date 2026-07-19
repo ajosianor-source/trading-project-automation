@@ -1,0 +1,96 @@
+# Controlled non-production fallback. Cloud staging uses the managed Terraform services.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: hapi-postgres, namespace: healthgov }
+spec:
+  serviceName: hapi-postgres
+  replicas: 1
+  selector: { matchLabels: { app: hapi-postgres } }
+  template:
+    metadata: { labels: { app: hapi-postgres, tier: data-plane } }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, fsGroup: 999, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: postgres
+          image: postgres:16.8-alpine
+          envFrom: [{ secretRef: { name: hapi-database-credentials } }]
+          ports: [{ name: postgres, containerPort: 5432 }]
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: "1", memory: 2Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: encrypted-gp3
+        resources: { requests: { storage: 100Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: hapi-postgres, namespace: healthgov }
+spec: { clusterIP: None, selector: { app: hapi-postgres }, ports: [{ name: postgres, port: 5432 }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: hapi-fhir, namespace: healthgov }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: hapi-fhir } }
+  template:
+    metadata: { labels: { app: hapi-fhir, tier: data-plane } }
+    spec:
+      serviceAccountName: healthgov-runtime
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: hapi
+          image: hapiproject/hapi:v8.10.0-2
+          envFrom: [{ secretRef: { name: hapi-runtime-secrets } }]
+          env:
+            - { name: hapi.fhir.allow_external_references, value: "false" }
+            - { name: hapi.fhir.default_encoding, value: "json" }
+          ports: [{ name: http, containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /fhir/metadata, port: http }, initialDelaySeconds: 30 }
+          resources: { requests: { cpu: 500m, memory: 1Gi }, limits: { cpu: "2", memory: 4Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: hapi-fhir, namespace: healthgov }
+spec: { selector: { app: hapi-fhir }, ports: [{ name: http, port: 8080 }] }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: kafka, namespace: healthgov }
+spec:
+  serviceName: kafka
+  replicas: 3
+  selector: { matchLabels: { app: kafka } }
+  template:
+    metadata: { labels: { app: kafka, tier: data-plane } }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, fsGroup: 101, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: redpanda
+          image: redpandadata/redpanda:v24.3.13
+          args: [redpanda, start, --kafka-addr=SASL_SSL://0.0.0.0:9093, --set, redpanda.enable_sasl=true]
+          ports: [{ name: kafka-tls, containerPort: 9093 }]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/redpanda/data }
+            - { name: tls, mountPath: /etc/redpanda/tls, readOnly: true }
+          resources: { requests: { cpu: 500m, memory: 1Gi }, limits: { cpu: "2", memory: 4Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+      volumes: [{ name: tls, secret: { secretName: kafka-tls } }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: encrypted-gp3
+        resources: { requests: { storage: 250Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: kafka, namespace: healthgov }
+spec: { clusterIP: None, selector: { app: kafka }, ports: [{ name: kafka-tls, port: 9093 }] }

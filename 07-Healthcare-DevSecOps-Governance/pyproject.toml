@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=78"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "healthgov-platform"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.115.12",
+  "uvicorn[standard]==0.34.2",
+  "pydantic-settings==2.9.1",
+  "httpx==0.28.1",
+  "python-jose[cryptography]==3.4.0",
+  "cryptography==44.0.3",
+  "structlog==25.3.0",
+  "prometheus-client==0.21.1",
+  "sqlalchemy[asyncio]==2.0.41",
+  "asyncpg==0.30.0",
+  "redis==6.1.0",
+  "aiokafka==0.12.0",
+  "pydicom==3.0.1",
+  "python-multipart==0.0.20",
+  "hvac==2.3.0",
+  "alembic==1.14.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.3.5",
+  "pytest-asyncio==0.26.0",
+  "ruff==0.11.10",
+  "mypy==1.15.0",
+  "pyyaml==6.0.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "shared"]
+testpaths = ["tests"]
+cache_dir = ".test-cache"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.setuptools.packages.find]
+where = ["shared"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "S", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]

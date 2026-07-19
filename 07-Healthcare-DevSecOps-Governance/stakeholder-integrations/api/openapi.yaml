@@ -1,0 +1,170 @@
+openapi: 3.1.0
+info:
+  title: HealthGov Stakeholder Integration API
+  version: 1.0.0
+  description: Tenant-isolated governance APIs. All operations require JWT, purpose-of-use, and gateway policy.
+servers:
+  - url: https://api.healthgov.example
+security:
+  - oauth2: []
+paths:
+  /compliance/v1/evidence:
+    post:
+      tags: [Compliance]
+      summary: Register immutable compliance evidence
+      operationId: collectEvidence
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Evidence"}}}}
+      responses: {"202": {description: Accepted}, "403": {$ref: "#/components/responses/Forbidden"}}
+  /compliance/v1/drift/detect:
+    post:
+      tags: [Compliance]
+      summary: Compare baseline and current control state
+      responses: {"200": {description: Drift result}}
+  /compliance/v1/posture:
+    get:
+      tags: [Compliance]
+      summary: Get continuous compliance posture
+      responses: {"200": {description: Framework posture}}
+  /risk/v1/risks/stakeholder-score:
+    post:
+      tags: [Risk]
+      summary: Calculate PHI, IoMT, FHIR, AI, and compliance risk
+      responses: {"200": {description: Inherent and residual risk}}
+  /risk/v1/risks:
+    get:
+      tags: [Risk]
+      summary: List tenant risk register and heatmap
+      responses: {"200": {description: Risk register}}
+  /alerts/v1/alerts:
+    get:
+      tags: [Incidents]
+      summary: List incident queue
+      responses: {"200": {description: Alerts}}
+    post:
+      tags: [Incidents]
+      summary: Create deduplicated alert
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Alert"}}}}
+      responses: {"202": {description: Queued}}
+  /alerts/v1/alerts/{alertId}/escalate:
+    post:
+      tags: [Incidents]
+      parameters: [{name: alertId, in: path, required: true, schema: {type: string}}]
+      summary: Run notification, ticketing, playbook, and forensic workflow
+      responses: {"202": {description: Escalation queued}}
+  /rbac/v1/roles:
+    get:
+      tags: [RBAC]
+      summary: List platform roles and permissions
+      responses: {"200": {description: Roles}}
+  /rbac/v1/assignments:
+    post:
+      tags: [RBAC]
+      summary: Create scoped role assignment
+      responses: {"201": {description: Assignment created}}
+  /rbac/v1/authorize:
+    post:
+      tags: [RBAC]
+      summary: Evaluate tenant and purpose-bound permission
+      responses: {"200": {description: Authorization decision}}
+  /audit/v1/events:
+    get:
+      tags: [Audit]
+      summary: Query immutable tenant audit trail
+      responses: {"200": {description: Audit events}}
+    post:
+      tags: [Audit]
+      summary: Append chained audit event
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/AuditEvent"}}}}
+      responses: {"202": {description: Event accepted}}
+  /plugins/v1/plugins/assess:
+    post:
+      tags: [Plugins]
+      summary: Assess signed plugin manifest
+      responses: {"200": {description: Plugin policy decision}}
+  /data-lake/v1/exports:
+    post:
+      tags: [Data Lake]
+      summary: Queue governed Parquet or Delta export
+      responses: {"202": {description: Export queued}}
+  /data-lake/v1/catalog/datasets:
+    get:
+      tags: [Data Lake]
+      summary: List cataloged datasets and lineage
+      responses: {"200": {description: Dataset catalog}}
+  /ml/v1/models/assess:
+    post:
+      tags: [AI Security]
+      summary: Assess model artifact, drift, SBOM, fairness, and oversight
+      responses: {"200": {description: Deployment decision}}
+  /ml/v1/models/adversarial-assess:
+    post:
+      tags: [AI Security]
+      summary: Assess evasion, extraction, membership inference, and serialization
+      responses: {"200": {description: Adversarial decision}}
+  /ml/v1/federated/rounds/assess:
+    post:
+      tags: [AI Security]
+      summary: Assess secure aggregation and privacy budget
+      responses: {"200": {description: Federated round decision}}
+  /observability/v1/telemetry/routes:
+    post:
+      tags: [Observability]
+      summary: Configure Wazuh, Splunk, or OTLP forwarding
+      responses: {"201": {description: Route created}}
+  /marketplace/v1/connectors:
+    get:
+      tags: [Marketplace]
+      summary: List Epic, Cerner, Meditech, Firely, Redox, Azure, and AWS connectors
+      responses: {"200": {description: Connector catalog}}
+  /marketplace/v1/connections/validate:
+    post:
+      tags: [Marketplace]
+      summary: Validate SMART/FHIR compatibility and residency
+      responses: {"200": {description: Validation queued}}
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.example.health/authorize
+          tokenUrl: https://auth.example.health/token
+          scopes:
+            governance.read: Read governance posture
+            governance.write: Change governance state
+  responses:
+    Forbidden:
+      description: Tenant, role, or purpose-of-use policy denied the request
+  schemas:
+    Evidence:
+      type: object
+      required: [framework, control_id, collector, artifact_sha256, status, observed_at, expires_at]
+      properties:
+        framework: {type: string, enum: [HIPAA, GDPR, NHS_DSPT, ISO27001, SOC2]}
+        control_id: {type: string}
+        collector: {type: string}
+        artifact_sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        status: {type: string, enum: [effective, partial, ineffective, not_applicable]}
+        observed_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+    Alert:
+      type: object
+      required: [source, rule_id, severity, title, summary]
+      properties:
+        source: {type: string}
+        rule_id: {type: string}
+        severity: {type: string, enum: [critical, high, medium, low]}
+        title: {type: string}
+        summary: {type: string}
+        asset_token: {type: [string, "null"]}
+    AuditEvent:
+      type: object
+      required: [action, resource_type, resource_id, purpose_of_use, outcome, trace_id]
+      properties:
+        action: {type: string}
+        resource_type: {type: string}
+        resource_id: {type: string}
+        purpose_of_use: {type: string}
+        outcome: {type: string}
+        trace_id: {type: string}
+        previous_digest: {type: [string, "null"], pattern: "^[a-f0-9]{64}$"}
