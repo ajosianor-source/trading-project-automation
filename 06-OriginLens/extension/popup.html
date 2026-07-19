@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OriginLens</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4efe6;
+        --panel: #fffaf3;
+        --ink: #1f2a2f;
+        --muted: #66757f;
+        --accent: #0e7490;
+        --accent-strong: #0b5c73;
+        --danger: #b42318;
+        --border: rgba(31, 42, 47, 0.12);
+      }
+
+      body {
+        margin: 0;
+        width: 340px;
+        background: radial-gradient(circle at top left, #fff8ed 0%, var(--bg) 70%);
+        color: var(--ink);
+        font: 14px/1.45 "Segoe UI", "Helvetica Neue", sans-serif;
+      }
+
+      main {
+        padding: 18px;
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 20px;
+      }
+
+      p {
+        margin: 0 0 14px;
+        color: var(--muted);
+      }
+
+      label {
+        display: block;
+        margin-bottom: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      input,
+      select,
+      button {
+        width: 100%;
+        box-sizing: border-box;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      input,
+      select {
+        margin-top: 6px;
+        background: var(--panel);
+        color: var(--ink);
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 14px 0;
+      }
+
+      .row input {
+        width: auto;
+        margin: 0;
+      }
+
+      button {
+        background: var(--accent);
+        color: white;
+        cursor: pointer;
+        border: none;
+        font-weight: 600;
+      }
+
+      button:hover {
+        background: var(--accent-strong);
+      }
+
+      button.secondary {
+        margin-top: 10px;
+        background: transparent;
+        color: var(--ink);
+        border: 1px solid var(--border);
+      }
+
+      #status {
+        min-height: 20px;
+        margin-top: 10px;
+        color: var(--danger);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>OriginLens</h1>
+      <p>Provenance-aware media risk screening for the open web.</p>
+
+      <label>
+        Backend URL
+        <input id="backendUrl" type="url" placeholder="http://127.0.0.1:8000" />
+      </label>
+
+      <label>
+        Requested Policy
+        <select id="requestedPolicy">
+          <option value="warn">Warn</option>
+          <option value="blur_and_warn">Blur and warn</option>
+          <option value="block">Block when high risk</option>
+        </select>
+      </label>
+
+      <div class="row">
+        <input id="autoScan" type="checkbox" />
+        <label for="autoScan">Auto-scan visible media on load</label>
+      </div>
+
+      <button id="saveButton" type="button">Save settings</button>
+      <button id="scanButton" class="secondary" type="button">Scan visible media</button>
+      <div id="status"></div>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

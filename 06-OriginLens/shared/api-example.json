@@ -1,0 +1,27 @@
+{
+  "status": "success",
+  "engine_mode": "heuristic",
+  "verdict": "suspicious_media",
+  "risk_band": "medium",
+  "confidence": 0.52,
+  "provenance": {
+    "has_c2pa": false,
+    "source_verified": false,
+    "signer": null
+  },
+  "signals": [
+    {
+      "name": "missing_provenance",
+      "score": 0.36,
+      "detail": "No trusted provenance claim was supplied with this media."
+    },
+    {
+      "name": "unverified_source",
+      "score": 0.24,
+      "detail": "The source has not been independently verified."
+    }
+  ],
+  "regions": [],
+  "policy_action": "warn",
+  "message": "Suspicious media pattern and weak provenance. Treat cautiously."
+}
